@@ -29,6 +29,7 @@ public class DiscoverBranchResponse {
         private String currency;
         private String countryCode;
         private CategorySummary primaryCategory;
+        private double rating;
     }
 
     @Data

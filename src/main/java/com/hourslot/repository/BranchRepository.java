@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
@@ -30,7 +31,8 @@ public class BranchRepository {
                    b.is_active, b.sort_order, b.created_at, b.updated_at, b.deleted_at,
                    biz.id AS biz_id, biz.organization_id AS biz_organization_id, biz.name AS biz_name,
                    biz.slug AS biz_slug, biz.description AS biz_description, biz.status AS biz_status,
-                   biz.is_verified AS biz_verified, biz.primary_category_id AS biz_primary_category_id,
+                   biz.is_verified AS biz_verified, biz.rating_avg AS biz_rating_avg,
+                   biz.primary_category_id AS biz_primary_category_id,
                    org.default_currency AS biz_currency, org.country_code AS biz_country_code,
                    cat.id AS cat_id, cat.name AS cat_name, cat.slug AS cat_slug,
                    (SELECT ma.url FROM business_media bm JOIN media_assets ma ON ma.id = bm.media_asset_id
@@ -163,6 +165,8 @@ public class BranchRepository {
         String status = rs.getString("biz_status");
         business.setStatus(status == null ? null : BusinessStatus.valueOf(status));
         business.setVerified(rs.getBoolean("biz_verified"));
+        BigDecimal ratingAvg = JdbcSupport.getDecimal(rs, "biz_rating_avg");
+        business.setRatingAvg(ratingAvg == null ? BigDecimal.ZERO : ratingAvg);
         business.setLogoUrl(rs.getString("logo_url"));
         business.setGalleryUrls(rs.getString("gallery_urls"));
         Long catId = JdbcSupport.getLong(rs, "cat_id");

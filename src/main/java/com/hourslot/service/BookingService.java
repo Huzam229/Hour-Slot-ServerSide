@@ -32,6 +32,9 @@ public class BookingService {
     private BranchRepository branchRepository;
 
     @Autowired
+    private BusinessRepository businessRepository;
+
+    @Autowired
     private ServiceRepository serviceRepository;
 
     @Autowired
@@ -77,10 +80,15 @@ public class BookingService {
                 .orElseGet(() -> customerProfileRepository.save(CustomerProfile.builder().user(customer).build()));
         Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new RuntimeException("Branch not found."));
+        if (branch.getBusiness() == null || branch.getBusiness().getId() == null) {
+            throw new RuntimeException("Branch is not linked to a business.");
+        }
+        Business business = businessRepository.findById(branch.getBusiness().getId())
+                .orElseThrow(() -> new RuntimeException("Business not found."));
+        branch.setBusiness(business);
         com.hourslot.model.Service service = serviceRepository.findById(serviceId)
                 .orElseThrow(() -> new RuntimeException("Service not found."));
 
-        Business business = branch.getBusiness();
         if (business.getStatus() != BusinessStatus.APPROVED || !business.isVerified()) {
             throw new RuntimeException("This business is not currently accepting bookings.");
         }

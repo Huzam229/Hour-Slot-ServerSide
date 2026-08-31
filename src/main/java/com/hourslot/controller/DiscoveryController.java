@@ -270,6 +270,7 @@ public class DiscoveryController {
             businessDto.setVerified(business.isVerified());
             businessDto.setCurrency(business.getCurrency());
             businessDto.setCountryCode(business.getCountryCode());
+            businessDto.setRating(business.getRating());
             businessDto.setPrimaryCategory(toCategorySummary(business.getPrimaryCategory()));
         }
 

@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Thin wrapper around NamedParameterJdbcTemplate so every repository writes
@@ -33,6 +34,14 @@ import java.util.Optional;
 public class JdbcSupport {
 
     private static final Logger log = LogManager.getLogger(JdbcSupport.class);
+
+    /** Per-request auth / badge polling — still run, just not printed every time. */
+    private static final Set<String> SKIP_LOG_CALLERS = Set.of(
+            "UserRepository.findByEmail",
+            "MemberRoleRepository.findActiveByUserId",
+            "NotificationRepository.countUnreadByUserId",
+            "NotificationRepository.countByUserAndReadFalse"
+    );
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
@@ -49,17 +58,31 @@ public class JdbcSupport {
     }
 
     private void logQuery(String sql, MapSqlParameterSource params) {
-        String caller = StackWalker.getInstance()
+        if (!log.isInfoEnabled()) {
+            return;
+        }
+        StackWalker.StackFrame frame = StackWalker.getInstance()
                 .walk(stream -> stream
-                        .filter(frame -> !frame.getClassName().equals(JdbcSupport.class.getName()))
+                        .filter(f -> !f.getClassName().equals(JdbcSupport.class.getName()))
                         .findFirst()
-                        .map(frame -> {
-                            String fullClassName = frame.getClassName();
-                            String simpleName = fullClassName.substring(fullClassName.lastIndexOf('.') + 1);
-                            return simpleName + "." + frame.getMethodName() + ":" + frame.getLineNumber();
-                        })
-                        .orElse("Unknown"));
-        log.info("[SQL Triggered by: {}]\nSQL: {}\nParameters: {}", caller, sql, params != null ? params.getValues() : "none");
+                        .orElse(null));
+        String simpleName = "Unknown";
+        String method = "";
+        int line = 0;
+        if (frame != null) {
+            String fullClassName = frame.getClassName();
+            simpleName = fullClassName.substring(fullClassName.lastIndexOf('.') + 1);
+            method = frame.getMethodName();
+            line = frame.getLineNumber();
+        }
+        String callerKey = simpleName + "." + method;
+        if (SKIP_LOG_CALLERS.contains(callerKey)) {
+            return;
+        }
+        log.info("[SQL Triggered by: {}]\nSQL: {}\nParameters: {}",
+                simpleName + "." + method + ":" + line,
+                sql,
+                params != null ? params.getValues() : "none");
     }
 
     public <T> Optional<T> findOne(String sql, MapSqlParameterSource params, RowMapper<T> mapper) {

@@ -59,13 +59,21 @@ public class NotificationRepository {
     }
 
     public List<Notification> findByUserOrderByCreatedAtDesc(User user) {
+        return findByUserId(user == null ? null : user.getId());
+    }
+
+    public List<Notification> findByUserId(Long userId) {
         return jdbc.findList(SELECT + " WHERE user_id = :userId ORDER BY created_at DESC",
-                jdbc.params().addValue("userId", user == null ? null : user.getId()), rows.notification);
+                jdbc.params().addValue("userId", userId), rows.notification);
     }
 
     public long countByUserAndReadFalse(User user) {
+        return countUnreadByUserId(user == null ? null : user.getId());
+    }
+
+    public long countUnreadByUserId(Long userId) {
         return jdbc.count("SELECT COUNT(*) FROM notifications WHERE user_id = :userId AND is_read = false",
-                jdbc.params().addValue("userId", user == null ? null : user.getId()));
+                jdbc.params().addValue("userId", userId));
     }
 
     private MapSqlParameterSource bind(Notification notification) {

@@ -2,9 +2,7 @@ package com.hourslot.controller;
 
 import com.hourslot.dto.MessageResponse;
 import com.hourslot.model.Notification;
-import com.hourslot.model.User;
 import com.hourslot.repository.NotificationRepository;
-import com.hourslot.repository.UserRepository;
 import com.hourslot.security.CustomUserDetails;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -22,18 +20,20 @@ public class NotificationController {
     @Autowired
     private NotificationRepository notificationRepository;
 
-    @Autowired
-    private UserRepository userRepository;
-
     @GetMapping
     public ResponseEntity<?> list(@AuthenticationPrincipal CustomUserDetails userDetails) {
-        User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        List<Notification> notifications = notificationRepository.findByUserOrderByCreatedAtDesc(user);
-        long unread = notificationRepository.countByUserAndReadFalse(user);
+        List<Notification> notifications = notificationRepository.findByUserId(userDetails.getId());
+        long unread = notifications.stream().filter(n -> !n.isRead()).count();
         Map<String, Object> body = new HashMap<>();
         body.put("notifications", notifications);
         body.put("unreadCount", unread);
         return ResponseEntity.ok(body);
+    }
+
+    @GetMapping("/unread-count")
+    public ResponseEntity<?> unreadCount(@AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(Map.of(
+                "unreadCount", notificationRepository.countUnreadByUserId(userDetails.getId())));
     }
 
     @PutMapping("/{id}/read")
@@ -42,7 +42,7 @@ public class NotificationController {
             @AuthenticationPrincipal CustomUserDetails userDetails) {
         Notification notification = notificationRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Notification not found."));
-        if (!notification.getUser().getId().equals(userDetails.getId())) {
+        if (notification.getUser() == null || !notification.getUser().getId().equals(userDetails.getId())) {
             return ResponseEntity.status(403).body(new MessageResponse("Unauthorized"));
         }
         notification.setRead(true);
@@ -52,8 +52,7 @@ public class NotificationController {
 
     @PutMapping("/read-all")
     public ResponseEntity<?> markAllRead(@AuthenticationPrincipal CustomUserDetails userDetails) {
-        User user = userRepository.findById(userDetails.getId()).orElseThrow();
-        List<Notification> notifications = notificationRepository.findByUserOrderByCreatedAtDesc(user);
+        List<Notification> notifications = notificationRepository.findByUserId(userDetails.getId());
         notifications.forEach(n -> n.setRead(true));
         notificationRepository.saveAll(notifications);
         return ResponseEntity.ok(new MessageResponse("All notifications marked as read"));
