@@ -6,6 +6,7 @@ import com.hourslot.model.User;
 import com.hourslot.repository.OrganizationRepository;
 import com.hourslot.repository.UserRepository;
 import com.hourslot.security.CustomUserDetails;
+import com.hourslot.service.CatalogLocaleService;
 import com.hourslot.service.TenancyService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -27,14 +28,17 @@ public class OrganizationController {
     private final UserRepository userRepository;
     private final OrganizationRepository organizationRepository;
     private final TenancyService tenancyService;
+    private final CatalogLocaleService catalogLocaleService;
 
     public OrganizationController(
             UserRepository userRepository,
             OrganizationRepository organizationRepository,
-            TenancyService tenancyService) {
+            TenancyService tenancyService,
+            CatalogLocaleService catalogLocaleService) {
         this.userRepository = userRepository;
         this.organizationRepository = organizationRepository;
         this.tenancyService = tenancyService;
+        this.catalogLocaleService = catalogLocaleService;
     }
 
     @GetMapping
@@ -52,6 +56,7 @@ public class OrganizationController {
         if (request.getBillingEmail() != null && !request.getBillingEmail().isBlank()) {
             organization.setBillingEmail(request.getBillingEmail().trim().toLowerCase(Locale.ROOT));
         }
+        String previousCurrency = organization.getDefaultCurrency();
         if (request.getDefaultCurrency() != null && !request.getDefaultCurrency().isBlank()) {
             organization.setDefaultCurrency(request.getDefaultCurrency().trim().toUpperCase(Locale.ROOT));
         }
@@ -60,10 +65,22 @@ public class OrganizationController {
                     ? null
                     : request.getCountryCode().trim().toUpperCase(Locale.ROOT));
         }
+        if (request.getRegion() != null) {
+            organization.setRegion(request.getRegion().trim().isEmpty() ? null : request.getRegion().trim());
+        }
+        if (request.getCity() != null) {
+            organization.setCity(request.getCity().trim().isEmpty() ? null : request.getCity().trim());
+        }
         if (request.getTimezone() != null) {
             organization.setTimezone(request.getTimezone().trim().isEmpty() ? null : request.getTimezone().trim());
         }
         organizationRepository.save(organization);
+        if (organization.getDefaultCurrency() != null
+                && !organization.getDefaultCurrency().equalsIgnoreCase(previousCurrency)) {
+            catalogLocaleService.applyCurrencyToCatalog(organization.getId(), organization.getDefaultCurrency());
+        }
+        catalogLocaleService.applyTimezoneToBusinesses(
+                organization.getId(), organization.getTimezone(), organization.getCountryCode());
         return ResponseEntity.ok(toView(organization));
     }
 
@@ -81,6 +98,8 @@ public class OrganizationController {
         view.put("status", organization.getStatus());
         view.put("defaultCurrency", organization.getDefaultCurrency());
         view.put("countryCode", organization.getCountryCode());
+        view.put("region", organization.getRegion());
+        view.put("city", organization.getCity());
         view.put("timezone", organization.getTimezone());
         view.put("createdAt", organization.getCreatedAt());
         view.put("updatedAt", organization.getUpdatedAt());
@@ -94,6 +113,8 @@ public class OrganizationController {
         private String billingEmail;
         private String defaultCurrency;
         private String countryCode;
+        private String region;
+        private String city;
         private String timezone;
     }
 }

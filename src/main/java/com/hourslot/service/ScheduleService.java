@@ -4,10 +4,12 @@ import com.hourslot.model.Branch;
 import com.hourslot.model.BranchBreak;
 import com.hourslot.model.BranchHoliday;
 import com.hourslot.model.BranchWorkingHour;
+import com.hourslot.model.BranchWorkingInterval;
 import com.hourslot.model.Staff;
 import com.hourslot.model.StaffBreak;
 import com.hourslot.model.StaffTimeOff;
 import com.hourslot.model.StaffWorkingHour;
+import com.hourslot.model.StaffWorkingInterval;
 import com.hourslot.repository.BranchHolidayRepository;
 import com.hourslot.repository.BranchWorkingHourRepository;
 import com.hourslot.repository.StaffTimeOffRepository;
@@ -20,6 +22,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -46,28 +49,11 @@ public class ScheduleService {
         if (staff != null) {
             Optional<StaffWorkingHour> staffHours = staffWorkingHourRepository.findByStaffAndDayOfWeek(staff, dayOfWeek);
             if (staffHours.isPresent()) {
-                StaffWorkingHour wh = staffHours.get();
-                List<TimeWindow> breaks = new ArrayList<>();
-                if (wh.getBreaks() != null) {
-                    for (StaffBreak b : wh.getBreaks()) {
-                        breaks.add(new TimeWindow(b.getStartTime(), b.getEndTime()));
-                    }
-                }
-                return Optional.of(new DayHours(wh.getId(), "STAFF", wh.getDayOfWeek(),
-                        wh.getStartTime(), wh.getEndTime(), wh.isClosed(), breaks));
+                return Optional.of(fromStaff(staffHours.get()));
             }
         }
         return branchWorkingHourRepository.findByBranchAndDayOfWeek(branch, dayOfWeek)
-                .map(wh -> {
-                    List<TimeWindow> breaks = new ArrayList<>();
-                    if (wh.getBreaks() != null) {
-                        for (BranchBreak b : wh.getBreaks()) {
-                            breaks.add(new TimeWindow(b.getStartTime(), b.getEndTime()));
-                        }
-                    }
-                    return new DayHours(wh.getId(), "BRANCH", wh.getDayOfWeek(),
-                            wh.getStartTime(), wh.getEndTime(), wh.isClosed(), breaks);
-                });
+                .map(this::fromBranch);
     }
 
     public boolean isHoliday(Branch branch, Staff staff, LocalDate date) {
@@ -89,6 +75,79 @@ public class ScheduleService {
         return staffTimeOffRepository.findOverlapping(staff, start, end);
     }
 
+    private DayHours fromStaff(StaffWorkingHour wh) {
+        List<TimeWindow> breaks = new ArrayList<>();
+        if (wh.getBreaks() != null) {
+            for (StaffBreak b : wh.getBreaks()) {
+                breaks.add(new TimeWindow(b.getStartTime(), b.getEndTime()));
+            }
+        }
+        List<TimeWindow> intervals = new ArrayList<>();
+        if (wh.getIntervals() != null) {
+            for (StaffWorkingInterval interval : wh.getIntervals()) {
+                if (interval.getStartTime() != null && interval.getEndTime() != null) {
+                    intervals.add(new TimeWindow(interval.getStartTime(), interval.getEndTime()));
+                }
+            }
+        }
+        return buildDayHours(wh.getId(), "STAFF", wh.getDayOfWeek(), wh.getStartTime(), wh.getEndTime(),
+                wh.isClosed(), wh.getSlotStepMinutes(), intervals, breaks);
+    }
+
+    private DayHours fromBranch(BranchWorkingHour wh) {
+        List<TimeWindow> breaks = new ArrayList<>();
+        if (wh.getBreaks() != null) {
+            for (BranchBreak b : wh.getBreaks()) {
+                breaks.add(new TimeWindow(b.getStartTime(), b.getEndTime()));
+            }
+        }
+        List<TimeWindow> intervals = new ArrayList<>();
+        if (wh.getIntervals() != null) {
+            for (BranchWorkingInterval interval : wh.getIntervals()) {
+                if (interval.getStartTime() != null && interval.getEndTime() != null) {
+                    intervals.add(new TimeWindow(interval.getStartTime(), interval.getEndTime()));
+                }
+            }
+        }
+        return buildDayHours(wh.getId(), "BRANCH", wh.getDayOfWeek(), wh.getStartTime(), wh.getEndTime(),
+                wh.isClosed(), wh.getSlotStepMinutes(), intervals, breaks);
+    }
+
+    private DayHours buildDayHours(
+            Long id,
+            String source,
+            int dayOfWeek,
+            LocalTime startTime,
+            LocalTime endTime,
+            boolean closed,
+            int slotStepMinutes,
+            List<TimeWindow> intervals,
+            List<TimeWindow> breaks) {
+        List<TimeWindow> resolvedIntervals = new ArrayList<>(intervals);
+        if (resolvedIntervals.isEmpty() && !closed && startTime != null && endTime != null) {
+            resolvedIntervals.add(new TimeWindow(startTime, endTime));
+        }
+        resolvedIntervals.sort(Comparator.comparing(TimeWindow::getStartTime, Comparator.nullsLast(Comparator.naturalOrder())));
+
+        LocalTime envelopeStart = startTime;
+        LocalTime envelopeEnd = endTime;
+        if (!resolvedIntervals.isEmpty()) {
+            envelopeStart = resolvedIntervals.stream()
+                    .map(TimeWindow::getStartTime)
+                    .filter(t -> t != null)
+                    .min(Comparator.naturalOrder())
+                    .orElse(startTime);
+            envelopeEnd = resolvedIntervals.stream()
+                    .map(TimeWindow::getEndTime)
+                    .filter(t -> t != null)
+                    .max(Comparator.naturalOrder())
+                    .orElse(endTime);
+        }
+
+        int step = slotStepMinutes > 0 ? slotStepMinutes : 30;
+        return new DayHours(id, source, dayOfWeek, envelopeStart, envelopeEnd, closed, step, resolvedIntervals, breaks);
+    }
+
     @Data
     @AllArgsConstructor
     public static class DayHours {
@@ -98,6 +157,8 @@ public class ScheduleService {
         private LocalTime startTime;
         private LocalTime endTime;
         private boolean closed;
+        private int slotStepMinutes;
+        private List<TimeWindow> intervals;
         private List<TimeWindow> breaks;
     }
 

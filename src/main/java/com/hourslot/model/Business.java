@@ -89,6 +89,20 @@ public class Business {
         this.ratingAvg = BigDecimal.valueOf(rating);
     }
 
+    @JsonProperty("currency")
+    public String getCurrency() {
+        if (organization != null && organization.getDefaultCurrency() != null
+                && !organization.getDefaultCurrency().isBlank()) {
+            return organization.getDefaultCurrency();
+        }
+        return "USD";
+    }
+
+    @JsonProperty("countryCode")
+    public String getCountryCode() {
+        return organization == null ? null : organization.getCountryCode();
+    }
+
     public void onCreate() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();

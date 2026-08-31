@@ -33,6 +33,10 @@ public class Organization {
 
     private String countryCode;
 
+    private String region;
+
+    private String city;
+
     private String timezone;
 
     @Builder.Default

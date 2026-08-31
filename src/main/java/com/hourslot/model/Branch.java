@@ -35,6 +35,14 @@ public class Branch {
 
     private String phoneNumber;
 
+    private String countryCode;
+
+    private String region;
+
+    private String city;
+
+    private String postalCode;
+
     private String timezone;
 
     @Builder.Default

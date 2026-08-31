@@ -4,15 +4,19 @@ import com.hourslot.dto.MessageResponse;
 import com.hourslot.model.*;
 import com.hourslot.repository.*;
 import com.hourslot.security.CustomUserDetails;
+import com.hourslot.service.CatalogLocaleService;
 import com.hourslot.service.EntitlementService;
 import com.hourslot.service.MediaAssetService;
 import com.hourslot.service.ScheduleService;
 import com.hourslot.service.StaffInviteService;
 import com.hourslot.service.TenancyService;
+import com.hourslot.service.RbacService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -31,6 +35,15 @@ public class BusinessController {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private RbacService rbacService;
+
+    @Autowired
+    private CustomerProfileRepository customerProfileRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     @Autowired
     private BranchRepository branchRepository;
@@ -92,6 +105,21 @@ public class BusinessController {
     @Autowired
     private StaffInviteService staffInviteService;
 
+    @Autowired
+    private CatalogLocaleService catalogLocaleService;
+
+
+    @Data
+    public static class CustomerCreateRequest {
+        @NotBlank
+        private String firstName;
+        @NotBlank
+        private String lastName;
+        @NotBlank
+        @jakarta.validation.constraints.Email
+        private String email;
+        private String phoneNumber;
+    }
 
     @Data
     public static class BusinessRegistrationRequest {
@@ -106,6 +134,12 @@ public class BusinessController {
         private Double latitude;
         private Double longitude;
         private String branchName;
+        private String countryCode;
+        private String region;
+        private String city;
+        private String postalCode;
+        private String defaultCurrency;
+        private String timezone;
     }
 
     @Data
@@ -119,6 +153,11 @@ public class BusinessController {
         @NotNull
         private Double longitude;
         private String phoneNumber;
+        private String countryCode;
+        private String region;
+        private String city;
+        private String postalCode;
+        private String timezone;
     }
 
     @Data
@@ -169,7 +208,14 @@ public class BusinessController {
                     .body(new MessageResponse("Error: You have already registered a business!"));
         }
 
-        Organization organization = tenancyService.provisionOrganization(owner, request.getName());
+        Organization organization = tenancyService.provisionOrganization(
+                owner,
+                request.getName(),
+                request.getDefaultCurrency(),
+                request.getCountryCode(),
+                request.getRegion(),
+                request.getCity(),
+                request.getTimezone());
         Category primaryCategory = null;
         if (request.getPrimaryCategoryId() != null) {
             primaryCategory = categoryRepository.findById(request.getPrimaryCategoryId()).orElse(null);
@@ -198,6 +244,11 @@ public class BusinessController {
                     .latitude(request.getLatitude())
                     .longitude(request.getLongitude())
                     .phoneNumber(request.getPhoneNumber())
+                    .countryCode(blankToNullUpper(request.getCountryCode()))
+                    .region(blankToNull(request.getRegion()))
+                    .city(blankToNull(request.getCity()))
+                    .postalCode(blankToNull(request.getPostalCode()))
+                    .timezone(blankToNull(request.getTimezone()))
                     .build();
             branchRepository.save(branch);
         }
@@ -301,6 +352,13 @@ public class BusinessController {
                 .latitude(request.getLatitude())
                 .longitude(request.getLongitude())
                 .phoneNumber(request.getPhoneNumber())
+                .countryCode(blankToNullUpper(request.getCountryCode() != null
+                        ? request.getCountryCode()
+                        : organization.getCountryCode()))
+                .region(blankToNull(request.getRegion() != null ? request.getRegion() : organization.getRegion()))
+                .city(blankToNull(request.getCity() != null ? request.getCity() : organization.getCity()))
+                .postalCode(blankToNull(request.getPostalCode()))
+                .timezone(blankToNull(request.getTimezone() != null ? request.getTimezone() : organization.getTimezone()))
                 .build();
 
         branchRepository.save(branch);
@@ -338,6 +396,7 @@ public class BusinessController {
                 .name(request.getName())
                 .description(request.getDescription())
                 .basePrice(java.math.BigDecimal.valueOf(request.getPrice()))
+                .currency(catalogLocaleService.resolveCurrency(business))
                 .durationMinutes(request.getDurationMinutes())
                 .build();
 
@@ -542,6 +601,8 @@ public class BusinessController {
         private String startTime; // "HH:mm"
         private String endTime;   // "HH:mm"
         private Boolean closed;
+        private Integer slotStepMinutes;
+        private java.util.List<IntervalRequest> intervals;
     }
 
     @Data
@@ -550,6 +611,34 @@ public class BusinessController {
         private String startTime; // "HH:mm"
         @NotBlank
         private String endTime;   // "HH:mm"
+    }
+
+    @Data
+    public static class IntervalRequest {
+        @NotBlank
+        private String startTime; // "HH:mm"
+        @NotBlank
+        private String endTime;   // "HH:mm"
+    }
+
+    @Data
+    public static class BatchWorkingHourRequest {
+        @NotNull
+        private Long branchId;
+        private Long staffId; // optional
+        private Integer slotStepMinutes;
+        private java.util.List<DayConfigRequest> days;
+    }
+
+    @Data
+    public static class DayConfigRequest {
+        @NotNull
+        private Integer dayOfWeek;
+        private String startTime; // "HH:mm" (legacy envelope; optional if intervals provided)
+        private String endTime;   // "HH:mm"
+        @NotNull
+        private Boolean closed;
+        private java.util.List<IntervalRequest> intervals;
     }
 
     @Data
@@ -579,8 +668,16 @@ public class BusinessController {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
         }
 
-        java.time.LocalTime start = request.getStartTime() != null ? java.time.LocalTime.parse(request.getStartTime()) : null;
-        java.time.LocalTime end = request.getEndTime() != null ? java.time.LocalTime.parse(request.getEndTime()) : null;
+        boolean closed = request.getClosed() != null && request.getClosed();
+        int step = normalizeSlotStep(request.getSlotStepMinutes());
+        java.util.List<java.time.LocalTime[]> windows = resolveIntervals(
+                closed, request.getIntervals(), request.getStartTime(), request.getEndTime());
+        java.time.LocalTime start = windows.isEmpty() ? null : windows.get(0)[0];
+        java.time.LocalTime end = windows.isEmpty() ? null : windows.get(windows.size() - 1)[1];
+        for (java.time.LocalTime[] w : windows) {
+            if (start == null || w[0].isBefore(start)) start = w[0];
+            if (end == null || w[1].isAfter(end)) end = w[1];
+        }
 
         if (request.getStaffId() != null) {
             Staff staff = staffRepository.findById(request.getStaffId()).orElseThrow();
@@ -589,7 +686,9 @@ public class BusinessController {
                     .dayOfWeek(request.getDayOfWeek())
                     .startTime(start)
                     .endTime(end)
-                    .closed(request.getClosed() != null ? request.getClosed() : false)
+                    .closed(closed)
+                    .slotStepMinutes(step)
+                    .intervals(toStaffIntervals(windows))
                     .build();
             staffWorkingHourRepository.save(wh);
         } else {
@@ -598,12 +697,153 @@ public class BusinessController {
                     .dayOfWeek(request.getDayOfWeek())
                     .startTime(start)
                     .endTime(end)
-                    .closed(request.getClosed() != null ? request.getClosed() : false)
+                    .closed(closed)
+                    .slotStepMinutes(step)
+                    .intervals(toBranchIntervals(windows))
                     .build();
             branchWorkingHourRepository.save(wh);
         }
 
         return ResponseEntity.ok(new MessageResponse("Working hours updated successfully!"));
+    }
+
+    @PostMapping("/working-hours/batch")
+    @PreAuthorize("hasRole('BUSINESS_OWNER')")
+    public ResponseEntity<?> configureWorkingHoursBatch(
+            @Valid @RequestBody BatchWorkingHourRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        
+        Branch branch = branchRepository.findById(request.getBranchId())
+                .orElseThrow(() -> new RuntimeException("Branch not found."));
+
+        // Validate owner
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        Business business = tenancyService.findBusinessForUser(user)
+                .orElseThrow(() -> new RuntimeException("Business not found."));
+        if (!branch.getBusiness().getId().equals(business.getId())) {
+            return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
+        }
+
+        if (request.getDays() == null || request.getDays().isEmpty()) {
+            return ResponseEntity.badRequest().body(new MessageResponse("Error: Days configuration list cannot be empty."));
+        }
+
+        int step = normalizeSlotStep(request.getSlotStepMinutes());
+        final Staff staff;
+        if (request.getStaffId() != null) {
+            staff = staffRepository.findById(request.getStaffId()).orElseThrow();
+        } else {
+            staff = null;
+        }
+
+        for (DayConfigRequest dayConfig : request.getDays()) {
+            boolean closed = Boolean.TRUE.equals(dayConfig.getClosed());
+            java.util.List<java.time.LocalTime[]> windows = resolveIntervals(
+                    closed, dayConfig.getIntervals(), dayConfig.getStartTime(), dayConfig.getEndTime());
+            java.time.LocalTime start = null;
+            java.time.LocalTime end = null;
+            for (java.time.LocalTime[] w : windows) {
+                if (start == null || w[0].isBefore(start)) start = w[0];
+                if (end == null || w[1].isAfter(end)) end = w[1];
+            }
+
+            if (staff != null) {
+                java.util.Optional<StaffWorkingHour> existing =
+                        staffWorkingHourRepository.findByStaffAndDayOfWeek(staff, dayConfig.getDayOfWeek());
+                StaffWorkingHour wh = existing.orElseGet(() -> StaffWorkingHour.builder()
+                        .staff(staff)
+                        .dayOfWeek(dayConfig.getDayOfWeek())
+                        .build());
+                wh.setStartTime(start);
+                wh.setEndTime(end);
+                wh.setClosed(closed);
+                wh.setSlotStepMinutes(step);
+                wh.setIntervals(toStaffIntervals(windows));
+                staffWorkingHourRepository.save(wh);
+            } else {
+                java.util.Optional<BranchWorkingHour> existing =
+                        branchWorkingHourRepository.findByBranchAndDayOfWeek(branch, dayConfig.getDayOfWeek());
+                BranchWorkingHour wh = existing.orElseGet(() -> BranchWorkingHour.builder()
+                        .branch(branch)
+                        .dayOfWeek(dayConfig.getDayOfWeek())
+                        .build());
+                wh.setStartTime(start);
+                wh.setEndTime(end);
+                wh.setClosed(closed);
+                wh.setSlotStepMinutes(step);
+                wh.setIntervals(toBranchIntervals(windows));
+                branchWorkingHourRepository.save(wh);
+            }
+        }
+
+        return ResponseEntity.ok(new MessageResponse("Working hours updated successfully!"));
+    }
+
+    private static int normalizeSlotStep(Integer step) {
+        if (step == null) return 30;
+        return switch (step) {
+            case 10, 30, 60, 120 -> step;
+            default -> 30;
+        };
+    }
+
+    private static java.util.List<java.time.LocalTime[]> resolveIntervals(
+            boolean closed,
+            java.util.List<IntervalRequest> intervals,
+            String legacyStart,
+            String legacyEnd) {
+        java.util.List<java.time.LocalTime[]> windows = new java.util.ArrayList<>();
+        if (closed) {
+            return windows;
+        }
+        if (intervals != null && !intervals.isEmpty()) {
+            for (IntervalRequest interval : intervals) {
+                if (interval == null || interval.getStartTime() == null || interval.getEndTime() == null) {
+                    continue;
+                }
+                java.time.LocalTime s = java.time.LocalTime.parse(interval.getStartTime());
+                java.time.LocalTime e = java.time.LocalTime.parse(interval.getEndTime());
+                if (!e.isAfter(s)) {
+                    throw new RuntimeException("Each open interval must end after it starts.");
+                }
+                windows.add(new java.time.LocalTime[]{s, e});
+            }
+        } else if (legacyStart != null && !legacyStart.isEmpty() && legacyEnd != null && !legacyEnd.isEmpty()) {
+            java.time.LocalTime s = java.time.LocalTime.parse(legacyStart);
+            java.time.LocalTime e = java.time.LocalTime.parse(legacyEnd);
+            if (!e.isAfter(s)) {
+                throw new RuntimeException("End time must be after start time.");
+            }
+            windows.add(new java.time.LocalTime[]{s, e});
+        }
+        windows.sort(java.util.Comparator.comparing(w -> w[0]));
+        return windows;
+    }
+
+    private static java.util.List<BranchWorkingInterval> toBranchIntervals(java.util.List<java.time.LocalTime[]> windows) {
+        java.util.List<BranchWorkingInterval> list = new java.util.ArrayList<>();
+        int order = 0;
+        for (java.time.LocalTime[] w : windows) {
+            list.add(BranchWorkingInterval.builder()
+                    .startTime(w[0])
+                    .endTime(w[1])
+                    .sortOrder(order++)
+                    .build());
+        }
+        return list;
+    }
+
+    private static java.util.List<StaffWorkingInterval> toStaffIntervals(java.util.List<java.time.LocalTime[]> windows) {
+        java.util.List<StaffWorkingInterval> list = new java.util.ArrayList<>();
+        int order = 0;
+        for (java.time.LocalTime[] w : windows) {
+            list.add(StaffWorkingInterval.builder()
+                    .startTime(w[0])
+                    .endTime(w[1])
+                    .sortOrder(order++)
+                    .build());
+        }
+        return list;
     }
 
     @PostMapping("/working-hours/{workingHourId}/breaks")
@@ -749,6 +989,21 @@ public class BusinessController {
         branch.setLatitude(request.getLatitude());
         branch.setLongitude(request.getLongitude());
         branch.setPhoneNumber(request.getPhoneNumber());
+        if (request.getCountryCode() != null) {
+            branch.setCountryCode(blankToNullUpper(request.getCountryCode()));
+        }
+        if (request.getRegion() != null) {
+            branch.setRegion(blankToNull(request.getRegion()));
+        }
+        if (request.getCity() != null) {
+            branch.setCity(blankToNull(request.getCity()));
+        }
+        if (request.getPostalCode() != null) {
+            branch.setPostalCode(blankToNull(request.getPostalCode()));
+        }
+        if (request.getTimezone() != null) {
+            branch.setTimezone(blankToNull(request.getTimezone()));
+        }
 
         branchRepository.save(branch);
         return ResponseEntity.ok(new MessageResponse("Branch updated successfully!"));
@@ -794,6 +1049,7 @@ public class BusinessController {
         service.setName(request.getName());
         service.setDescription(request.getDescription());
         service.setPrice(request.getPrice());
+        service.setCurrency(catalogLocaleService.resolveCurrency(business));
         service.setDurationMinutes(request.getDurationMinutes());
 
         serviceRepository.save(service);
@@ -1065,6 +1321,7 @@ public class BusinessController {
                 .name(request.getName())
                 .description(request.getDescription())
                 .price(request.getPrice())
+                .currency(catalogLocaleService.resolveCurrency(business))
                 .sessionsCount(request.getSessionsCount())
                 .expiryDays(request.getExpiryDays() != null ? request.getExpiryDays() : 0)
                 .active(request.getActive() != null ? request.getActive() : true)
@@ -1098,6 +1355,7 @@ public class BusinessController {
         pkg.setName(request.getName());
         pkg.setDescription(request.getDescription());
         pkg.setPrice(request.getPrice());
+        pkg.setCurrency(catalogLocaleService.resolveCurrency(business));
         pkg.setSessionsCount(request.getSessionsCount());
         pkg.setExpiryDays(request.getExpiryDays() != null ? request.getExpiryDays() : 0);
         if (request.getActive() != null) {
@@ -1325,11 +1583,66 @@ public class BusinessController {
         return ResponseEntity.ok(new MessageResponse("Peak pricing rule deleted."));
     }
 
+    // ==========================================================================
+    // CUSTOMER MANAGEMENT ENDPOINTS
+    // ==========================================================================
+
+    @GetMapping("/customers")
+    @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
+    public ResponseEntity<?> getCustomers() {
+        List<User> users = userRepository.findAll();
+        rbacService.attachAppRoles(users);
+        List<User> customers = users.stream()
+                .filter(u -> u.getRole() == UserRole.CUSTOMER)
+                .toList();
+        return ResponseEntity.ok(customers);
+    }
+
+    @PostMapping("/customers")
+    @PreAuthorize("hasAnyRole('BUSINESS_OWNER', 'BUSINESS_STAFF')")
+    @Transactional
+    public ResponseEntity<?> createCustomer(@Valid @RequestBody CustomerCreateRequest request) {
+        if (userRepository.existsByEmail(request.getEmail())) {
+            return ResponseEntity.badRequest().body(new MessageResponse("Error: Email is already in use!"));
+        }
+
+        User user = User.builder()
+                .email(request.getEmail())
+                .passwordHash(passwordEncoder.encode(java.util.UUID.randomUUID().toString()))
+                .firstName(request.getFirstName())
+                .lastName(request.getLastName())
+                .phoneNumber(request.getPhoneNumber())
+                .status("ACTIVE")
+                .build();
+
+        User savedUser = userRepository.save(user);
+
+        customerProfileRepository.save(CustomerProfile.builder()
+                .user(savedUser)
+                .build());
+
+        rbacService.grantSystemRole(savedUser, "CUSTOMER", null, null, null, null);
+
+        // attach app role so UI receives it
+        savedUser.setRole(UserRole.CUSTOMER);
+
+        return ResponseEntity.ok(savedUser);
+    }
+
     private Organization organizationOf(Business business) {
         Organization organization = business.getOrganization();
         if (organization == null) {
             throw new RuntimeException("Organization not found.");
         }
         return organization;
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String blankToNullUpper(String value) {
+        String trimmed = blankToNull(value);
+        return trimmed == null ? null : trimmed.toUpperCase();
     }
 }

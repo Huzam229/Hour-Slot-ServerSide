@@ -10,6 +10,7 @@ import com.hourslot.model.Branch;
 import com.hourslot.model.BranchBreak;
 import com.hourslot.model.BranchHoliday;
 import com.hourslot.model.BranchWorkingHour;
+import com.hourslot.model.BranchWorkingInterval;
 import com.hourslot.model.Business;
 import com.hourslot.model.BusinessMedia;
 import com.hourslot.model.BusinessStatus;
@@ -38,6 +39,7 @@ import com.hourslot.model.StaffInvite;
 import com.hourslot.model.StaffService;
 import com.hourslot.model.StaffTimeOff;
 import com.hourslot.model.StaffWorkingHour;
+import com.hourslot.model.StaffWorkingInterval;
 import com.hourslot.model.SubscriptionPlan;
 import com.hourslot.model.SystemSetting;
 import com.hourslot.model.TimeOfDayPricing;
@@ -168,6 +170,8 @@ public class RowMappers {
         organization.setStripeConnectAccountId(rs.getString(p + "stripe_connect_account_id"));
         organization.setDefaultCurrency(rs.getString(p + "default_currency"));
         organization.setCountryCode(rs.getString(p + "country_code"));
+        organization.setRegion(JdbcSupport.optionalString(rs, p + "region"));
+        organization.setCity(JdbcSupport.optionalString(rs, p + "city"));
         organization.setTimezone(rs.getString(p + "timezone"));
         organization.setCreatedAt(JdbcSupport.localDateTime(rs, p + "created_at"));
         organization.setUpdatedAt(JdbcSupport.localDateTime(rs, p + "updated_at"));
@@ -248,6 +252,10 @@ public class RowMappers {
         branch.setLatitude(JdbcSupport.getDouble(rs, "latitude"));
         branch.setLongitude(JdbcSupport.getDouble(rs, "longitude"));
         branch.setPhoneNumber(rs.getString("phone_number"));
+        branch.setCountryCode(JdbcSupport.optionalString(rs, "country_code"));
+        branch.setRegion(JdbcSupport.optionalString(rs, "region"));
+        branch.setCity(JdbcSupport.optionalString(rs, "city"));
+        branch.setPostalCode(JdbcSupport.optionalString(rs, "postal_code"));
         branch.setTimezone(rs.getString("timezone"));
         branch.setActive(rs.getBoolean("is_active"));
         Integer sort = JdbcSupport.getInt(rs, "sort_order");
@@ -580,6 +588,12 @@ public class RowMappers {
         hour.setStartTime(JdbcSupport.localTime(rs, "start_time"));
         hour.setEndTime(JdbcSupport.localTime(rs, "end_time"));
         hour.setClosed(rs.getBoolean("closed"));
+        try {
+            int step = rs.getInt("slot_step_minutes");
+            hour.setSlotStepMinutes(rs.wasNull() ? 30 : step);
+        } catch (Exception ignored) {
+            hour.setSlotStepMinutes(30);
+        }
         return hour;
     };
 
@@ -594,6 +608,18 @@ public class RowMappers {
         return br;
     };
 
+    public final RowMapper<BranchWorkingInterval> branchWorkingInterval = (rs, i) -> {
+        BranchWorkingInterval interval = new BranchWorkingInterval();
+        interval.setId(JdbcSupport.getLong(rs, "id"));
+        BranchWorkingHour hour = new BranchWorkingHour();
+        hour.setId(JdbcSupport.getLong(rs, "working_hour_id"));
+        interval.setWorkingHour(hour);
+        interval.setStartTime(JdbcSupport.localTime(rs, "start_time"));
+        interval.setEndTime(JdbcSupport.localTime(rs, "end_time"));
+        interval.setSortOrder(rs.getInt("sort_order"));
+        return interval;
+    };
+
     public final RowMapper<StaffWorkingHour> staffWorkingHour = (rs, i) -> {
         StaffWorkingHour hour = new StaffWorkingHour();
         hour.setId(JdbcSupport.getLong(rs, "id"));
@@ -602,6 +628,12 @@ public class RowMappers {
         hour.setStartTime(JdbcSupport.localTime(rs, "start_time"));
         hour.setEndTime(JdbcSupport.localTime(rs, "end_time"));
         hour.setClosed(rs.getBoolean("closed"));
+        try {
+            int step = rs.getInt("slot_step_minutes");
+            hour.setSlotStepMinutes(rs.wasNull() ? 30 : step);
+        } catch (Exception ignored) {
+            hour.setSlotStepMinutes(30);
+        }
         return hour;
     };
 
@@ -614,6 +646,18 @@ public class RowMappers {
         br.setStartTime(JdbcSupport.localTime(rs, "start_time"));
         br.setEndTime(JdbcSupport.localTime(rs, "end_time"));
         return br;
+    };
+
+    public final RowMapper<StaffWorkingInterval> staffWorkingInterval = (rs, i) -> {
+        StaffWorkingInterval interval = new StaffWorkingInterval();
+        interval.setId(JdbcSupport.getLong(rs, "id"));
+        StaffWorkingHour hour = new StaffWorkingHour();
+        hour.setId(JdbcSupport.getLong(rs, "working_hour_id"));
+        interval.setWorkingHour(hour);
+        interval.setStartTime(JdbcSupport.localTime(rs, "start_time"));
+        interval.setEndTime(JdbcSupport.localTime(rs, "end_time"));
+        interval.setSortOrder(rs.getInt("sort_order"));
+        return interval;
     };
 
     public final RowMapper<BranchHoliday> branchHoliday = (rs, i) -> {

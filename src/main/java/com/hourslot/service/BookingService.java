@@ -160,7 +160,11 @@ public class BookingService {
                 .bookingTime(bookingTime)
                 .endTime(endTime)
                 .totalPrice(finalPrice)
-                .currency(service.getCurrency() == null ? "USD" : service.getCurrency())
+                .currency(service.getCurrency() == null
+                        ? (business.getOrganization() != null && business.getOrganization().getDefaultCurrency() != null
+                                ? business.getOrganization().getDefaultCurrency()
+                                : "USD")
+                        : service.getCurrency())
                 .status(BookingStatus.CONFIRMED)
                 .paymentStatus(paymentStatus)
                 .paymentMethod(paymentMethod)
@@ -212,9 +216,25 @@ public class BookingService {
 
         LocalTime startLocal = bookingTime.toLocalTime();
         LocalTime endLocal = endTime.toLocalTime();
-        if (dayConfig.getStartTime() == null || dayConfig.getEndTime() == null ||
-                startLocal.isBefore(dayConfig.getStartTime()) || endLocal.isAfter(dayConfig.getEndTime())) {
-            throw new RuntimeException("The selected slot is outside working shifts.");
+
+        List<ScheduleService.TimeWindow> intervals = dayConfig.getIntervals();
+        if (intervals == null || intervals.isEmpty()) {
+            if (dayConfig.getStartTime() == null || dayConfig.getEndTime() == null ||
+                    startLocal.isBefore(dayConfig.getStartTime()) || endLocal.isAfter(dayConfig.getEndTime())) {
+                throw new RuntimeException("The selected slot is outside working shifts.");
+            }
+        } else {
+            boolean insideInterval = false;
+            for (ScheduleService.TimeWindow window : intervals) {
+                if (window.getStartTime() == null || window.getEndTime() == null) continue;
+                if (!startLocal.isBefore(window.getStartTime()) && !endLocal.isAfter(window.getEndTime())) {
+                    insideInterval = true;
+                    break;
+                }
+            }
+            if (!insideInterval) {
+                throw new RuntimeException("The selected slot is outside working shifts.");
+            }
         }
 
         if (dayConfig.getBreaks() != null) {

@@ -105,7 +105,7 @@ public class AvailabilityController {
                 continue;
             }
             ScheduleService.DayHours wh = scheduleService.resolveDayHours(branch, staff, dayOfWeek).orElse(null);
-            if (wh == null || wh.isClosed() || wh.getStartTime() == null || wh.getEndTime() == null) {
+            if (wh == null || wh.isClosed() || wh.getIntervals() == null || wh.getIntervals().isEmpty()) {
                 continue;
             }
 
@@ -120,8 +120,13 @@ public class AvailabilityController {
                     staff, startOfDay, endOfDay, activeStatuses
             );
 
-            mergeSlots(uniqueSlots, generateSlotsForWindow(
-                    branchId, staff, service, localDate, wh.getStartTime(), wh.getEndTime(), wh.getBreaks(), bookings));
+            for (ScheduleService.TimeWindow window : wh.getIntervals()) {
+                if (window.getStartTime() == null || window.getEndTime() == null) continue;
+                mergeSlots(uniqueSlots, generateSlotsForWindow(
+                        branchId, staff, service, localDate,
+                        window.getStartTime(), window.getEndTime(),
+                        wh.getBreaks(), bookings, wh.getSlotStepMinutes()));
+            }
         }
 
         return ResponseEntity.ok(new ArrayList<>(uniqueSlots.values()));
@@ -132,7 +137,7 @@ public class AvailabilityController {
             return Collections.emptyList();
         }
         ScheduleService.DayHours wh = scheduleService.resolveDayHours(branch, null, dayOfWeek).orElse(null);
-        if (wh == null || wh.isClosed() || wh.getStartTime() == null || wh.getEndTime() == null) {
+        if (wh == null || wh.isClosed() || wh.getIntervals() == null || wh.getIntervals().isEmpty()) {
             return Collections.emptyList();
         }
 
@@ -147,8 +152,17 @@ public class AvailabilityController {
                 branch, startOfDay, endOfDay, activeStatuses
         );
 
-        return generateSlotsForWindow(
-                branch.getId(), null, service, localDate, wh.getStartTime(), wh.getEndTime(), wh.getBreaks(), bookings);
+        List<PricingService.PricedSlot> slots = new ArrayList<>();
+        Map<String, PricingService.PricedSlot> unique = new TreeMap<>();
+        for (ScheduleService.TimeWindow window : wh.getIntervals()) {
+            if (window.getStartTime() == null || window.getEndTime() == null) continue;
+            mergeSlots(unique, generateSlotsForWindow(
+                    branch.getId(), null, service, localDate,
+                    window.getStartTime(), window.getEndTime(),
+                    wh.getBreaks(), bookings, wh.getSlotStepMinutes()));
+        }
+        slots.addAll(unique.values());
+        return slots;
     }
 
     private void mergeSlots(Map<String, PricingService.PricedSlot> into, List<PricingService.PricedSlot> incoming) {
@@ -168,12 +182,14 @@ public class AvailabilityController {
             LocalTime shiftStart,
             LocalTime shiftEnd,
             List<ScheduleService.TimeWindow> breaks,
-            List<Booking> bookings) {
+            List<Booking> bookings,
+            int slotStepMinutes) {
 
         List<PricingService.PricedSlot> slots = new ArrayList<>();
         LocalTime slotTime = shiftStart;
         int serviceDuration = service.getDurationMinutes() > 0 ? service.getDurationMinutes() : 30;
         int serviceBuffer = Math.max(0, service.getBufferMinutes());
+        int step = slotStepMinutes > 0 ? slotStepMinutes : 30;
         List<TimeOfDayPricing> dayRules = pricingService.rulesFor(service, localDate.getDayOfWeek().getValue());
         BigDecimal unitPrice = pricingService.unitPrice(service, staff);
 
@@ -192,7 +208,7 @@ public class AvailabilityController {
                 }
             }
             if (overlapsBreak) {
-                slotTime = slotTime.plusMinutes(30);
+                slotTime = slotTime.plusMinutes(step);
                 continue;
             }
 
@@ -207,7 +223,7 @@ public class AvailabilityController {
                 }
             }
             if (overlapsBooking) {
-                slotTime = slotTime.plusMinutes(30);
+                slotTime = slotTime.plusMinutes(step);
                 continue;
             }
 
@@ -215,7 +231,7 @@ public class AvailabilityController {
                 LocalDateTime slotDateTime = localDate.atTime(slotStart);
                 String lockKey = slotLockService.buildLockKey(branchId, staff.getId(), service.getId(), slotDateTime);
                 if (slotLockService.isLocked(lockKey)) {
-                    slotTime = slotTime.plusMinutes(30);
+                    slotTime = slotTime.plusMinutes(step);
                     continue;
                 }
             }
@@ -224,7 +240,7 @@ public class AvailabilityController {
             LocalDateTime endAt = localDate.atTime(slotEnd);
             PricingService.PriceQuote quote = pricingService.quote(service, unitPrice, dayRules, startAt, endAt);
             slots.add(pricingService.toSlot(slotStart, slotEnd, quote));
-            slotTime = slotTime.plusMinutes(30);
+            slotTime = slotTime.plusMinutes(step);
         }
 
         return slots;

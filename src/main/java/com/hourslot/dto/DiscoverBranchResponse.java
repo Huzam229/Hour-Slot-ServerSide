@@ -9,6 +9,9 @@ public class DiscoverBranchResponse {
     private String name;
     private String address;
     private String phoneNumber;
+    private String countryCode;
+    private String region;
+    private String city;
     private Double latitude;
     private Double longitude;
     private Double distanceMeters;
@@ -23,6 +26,8 @@ public class DiscoverBranchResponse {
         private String galleryUrls;
         private BusinessStatus status;
         private boolean verified;
+        private String currency;
+        private String countryCode;
         private CategorySummary primaryCategory;
     }
 

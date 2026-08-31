@@ -29,6 +29,7 @@ public class TenancyService {
     private final MemberRoleRepository memberRoleRepository;
     private final RbacService rbacService;
     private final EntitlementService entitlementService;
+    private final SystemSettingService systemSettingService;
 
     public TenancyService(
             OrganizationRepository organizationRepository,
@@ -37,7 +38,8 @@ public class TenancyService {
             StaffRepository staffRepository,
             MemberRoleRepository memberRoleRepository,
             RbacService rbacService,
-            EntitlementService entitlementService) {
+            EntitlementService entitlementService,
+            SystemSettingService systemSettingService) {
         this.organizationRepository = organizationRepository;
         this.organizationMemberRepository = organizationMemberRepository;
         this.businessRepository = businessRepository;
@@ -45,17 +47,37 @@ public class TenancyService {
         this.memberRoleRepository = memberRoleRepository;
         this.rbacService = rbacService;
         this.entitlementService = entitlementService;
+        this.systemSettingService = systemSettingService;
     }
 
     @Transactional
     public Organization provisionOrganization(User owner, String name) {
+        return provisionOrganization(owner, name, null, null, null, null, null);
+    }
+
+    @Transactional
+    public Organization provisionOrganization(
+            User owner,
+            String name,
+            String currency,
+            String countryCode,
+            String region,
+            String city,
+            String timezone) {
         String slug = uniqueOrgSlug(name, owner.getId());
+        String resolvedCurrency = currency == null || currency.isBlank()
+                ? systemSettingService.defaultCurrency()
+                : currency.trim().toUpperCase(Locale.ROOT);
         Organization organization = Organization.builder()
                 .name(name == null || name.isBlank() ? (owner.getFirstName() + "'s Organization") : name + " Org")
                 .slug(slug)
                 .billingEmail(owner.getEmail())
                 .status("ACTIVE")
-                .defaultCurrency("USD")
+                .defaultCurrency(resolvedCurrency)
+                .countryCode(blankToNull(countryCode) == null ? null : countryCode.trim().toUpperCase(Locale.ROOT))
+                .region(blankToNull(region))
+                .city(blankToNull(city))
+                .timezone(blankToNull(timezone))
                 .build();
         organization = organizationRepository.save(organization);
 
@@ -156,5 +178,9 @@ public class TenancyService {
                 .replaceAll("\\s+", "-")
                 .replaceAll("-+", "-")
                 .trim();
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

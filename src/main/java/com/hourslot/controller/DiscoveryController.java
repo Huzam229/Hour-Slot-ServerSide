@@ -203,6 +203,15 @@ public class DiscoveryController {
         if (branch.getAddress() != null && branch.getAddress().toLowerCase().contains(query)) {
             return true;
         }
+        if (branch.getCity() != null && branch.getCity().toLowerCase().contains(query)) {
+            return true;
+        }
+        if (branch.getRegion() != null && branch.getRegion().toLowerCase().contains(query)) {
+            return true;
+        }
+        if (branch.getCountryCode() != null && branch.getCountryCode().toLowerCase().contains(query)) {
+            return true;
+        }
 
         Business business = branch.getBusiness();
         if (business == null) {
@@ -259,6 +268,8 @@ public class DiscoveryController {
             businessDto.setGalleryUrls(business.getGalleryUrls());
             businessDto.setStatus(business.getStatus());
             businessDto.setVerified(business.isVerified());
+            businessDto.setCurrency(business.getCurrency());
+            businessDto.setCountryCode(business.getCountryCode());
             businessDto.setPrimaryCategory(toCategorySummary(business.getPrimaryCategory()));
         }
 
@@ -267,6 +278,9 @@ public class DiscoveryController {
         dto.setName(branch.getName());
         dto.setAddress(branch.getAddress());
         dto.setPhoneNumber(branch.getPhoneNumber());
+        dto.setCountryCode(branch.getCountryCode());
+        dto.setRegion(branch.getRegion());
+        dto.setCity(branch.getCity());
         dto.setLatitude(branch.getLatitude());
         dto.setLongitude(branch.getLongitude());
         dto.setBusiness(businessDto);

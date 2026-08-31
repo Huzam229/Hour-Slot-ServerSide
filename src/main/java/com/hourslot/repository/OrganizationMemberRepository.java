@@ -26,6 +26,7 @@ public class OrganizationMemberRepository {
                    o.status AS o_status, o.stripe_customer_id AS o_stripe_customer_id,
                    o.stripe_connect_account_id AS o_stripe_connect_account_id,
                    o.default_currency AS o_default_currency, o.country_code AS o_country_code,
+                   o.region AS o_region, o.city AS o_city,
                    o.timezone AS o_timezone, o.created_at AS o_created_at, o.updated_at AS o_updated_at,
                    o.deleted_at AS o_deleted_at
             FROM organization_members om

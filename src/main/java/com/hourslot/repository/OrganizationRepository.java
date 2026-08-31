@@ -13,7 +13,7 @@ public class OrganizationRepository {
 
     private static final String SELECT = """
             SELECT id, name, slug, billing_email, status, stripe_customer_id, stripe_connect_account_id,
-                   default_currency, country_code, timezone, created_at, updated_at, deleted_at
+                   default_currency, country_code, region, city, timezone, created_at, updated_at, deleted_at
             FROM organizations
             """;
 
@@ -30,10 +30,10 @@ public class OrganizationRepository {
             organization.onCreate();
             Long id = jdbc.insert("""
                     INSERT INTO organizations (name, slug, billing_email, status, stripe_customer_id,
-                                               stripe_connect_account_id, default_currency, country_code, timezone,
-                                               created_at, updated_at)
+                                               stripe_connect_account_id, default_currency, country_code, region, city,
+                                               timezone, created_at, updated_at)
                     VALUES (:name, :slug, :billingEmail, :status, :stripeCustomerId, :stripeConnectAccountId,
-                            :defaultCurrency, :countryCode, :timezone, :createdAt, :updatedAt)
+                            :defaultCurrency, :countryCode, :region, :city, :timezone, :createdAt, :updatedAt)
                     """, bind(organization));
             organization.setId(id);
             return organization;
@@ -42,11 +42,16 @@ public class OrganizationRepository {
         jdbc.update("""
                 UPDATE organizations SET name = :name, slug = :slug, billing_email = :billingEmail, status = :status,
                     stripe_customer_id = :stripeCustomerId, stripe_connect_account_id = :stripeConnectAccountId,
-                    default_currency = :defaultCurrency, country_code = :countryCode, timezone = :timezone,
-                    updated_at = :updatedAt
+                    default_currency = :defaultCurrency, country_code = :countryCode, region = :region, city = :city,
+                    timezone = :timezone, updated_at = :updatedAt
                 WHERE id = :id
                 """, bind(organization).addValue("id", organization.getId()));
         return organization;
+    }
+
+    public Optional<Organization> findById(Long id) {
+        return jdbc.findOne(SELECT + " WHERE id = :id AND deleted_at IS NULL",
+                jdbc.params().addValue("id", id), rows.organization);
     }
 
     public boolean existsBySlug(String slug) {
@@ -69,6 +74,8 @@ public class OrganizationRepository {
                 .addValue("stripeConnectAccountId", organization.getStripeConnectAccountId())
                 .addValue("defaultCurrency", organization.getDefaultCurrency())
                 .addValue("countryCode", organization.getCountryCode())
+                .addValue("region", organization.getRegion())
+                .addValue("city", organization.getCity())
                 .addValue("timezone", organization.getTimezone())
                 .addValue("createdAt", JdbcSupport.ts(organization.getCreatedAt()))
                 .addValue("updatedAt", JdbcSupport.ts(organization.getUpdatedAt()));

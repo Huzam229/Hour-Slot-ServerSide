@@ -29,7 +29,15 @@ public class BranchWorkingHour {
 
     private boolean closed;
 
+    @Builder.Default
+    private int slotStepMinutes = 30;
+
     @JsonIgnoreProperties("workingHour")
     @Builder.Default
     private List<BranchBreak> breaks = new ArrayList<>();
+
+    @JsonIgnoreProperties("workingHour")
+    @Builder.Default
+    private List<BranchWorkingInterval> intervals = new ArrayList<>();
 }
+

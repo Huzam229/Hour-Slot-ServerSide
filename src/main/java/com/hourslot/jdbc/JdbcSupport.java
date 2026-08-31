@@ -138,6 +138,14 @@ public class JdbcSupport {
         return rs.getBigDecimal(column);
     }
 
+    public static String optionalString(ResultSet rs, String column) {
+        try {
+            return rs.getString(column);
+        } catch (SQLException ignored) {
+            return null;
+        }
+    }
+
     public Object jsonb(Map<String, Object> value) {
         if (value == null) {
             return null;

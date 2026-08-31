@@ -119,6 +119,15 @@ public class BusinessRepository {
     }
 
     private void hydrate(Business business, boolean secondary) {
+        if (business.getOrganization() != null && business.getOrganization().getId() != null
+                && business.getOrganization().getDefaultCurrency() == null) {
+            jdbc.findOne("""
+                    SELECT id, name, slug, billing_email, status, stripe_customer_id, stripe_connect_account_id,
+                           default_currency, country_code, region, city, timezone, created_at, updated_at, deleted_at
+                    FROM organizations WHERE id = :id AND deleted_at IS NULL
+                    """, jdbc.params().addValue("id", business.getOrganization().getId()), rows.organization)
+                    .ifPresent(business::setOrganization);
+        }
         if (business.getPrimaryCategory() != null && business.getPrimaryCategory().getId() != null) {
             jdbc.findOne("SELECT id, parent_id, name, slug, icon, image_url, search_tags, is_active, sort_order, created_at FROM categories WHERE id = :id",
                     jdbc.params().addValue("id", business.getPrimaryCategory().getId()), rows.category)

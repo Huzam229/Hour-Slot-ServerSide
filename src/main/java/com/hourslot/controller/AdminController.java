@@ -519,8 +519,10 @@ public class AdminController {
             HttpServletRequest request) {
         boolean registrationOpen = Boolean.parseBoolean(String.valueOf(settingsUpdate.getOrDefault("registrationOpen", true)));
         String currencies = String.valueOf(settingsUpdate.getOrDefault("supportedCurrencies", "USD,PKR,AED,EUR,GBP"));
+        String defaultCurrency = String.valueOf(settingsUpdate.getOrDefault("defaultCurrency", "USD"));
         User admin = userRepository.findById(adminDetails.getId()).orElse(null);
-        Map<String, Object> updated = systemSettingService.updateAdminSettings(registrationOpen, currencies, admin);
+        Map<String, Object> updated = systemSettingService.updateAdminSettings(
+                registrationOpen, currencies, defaultCurrency, admin);
 
         logAction(adminDetails.getId(), "UPDATE_SYSTEM_SETTINGS", "SystemSetting", 0L,
                 "Updated platform settings", request.getRemoteAddr());

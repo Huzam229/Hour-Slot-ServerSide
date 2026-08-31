@@ -19,17 +19,19 @@ import java.util.Optional;
 public class BranchRepository {
 
     private static final String SELECT = """
-            SELECT id, business_id, name, address, latitude, longitude, phone_number, timezone,
-                   is_active, sort_order, created_at, updated_at, deleted_at
+            SELECT id, business_id, name, address, latitude, longitude, phone_number, country_code, region, city,
+                   postal_code, timezone, is_active, sort_order, created_at, updated_at, deleted_at
             FROM branches
             """;
 
     private static final String SELECT_WITH_BUSINESS = """
-            SELECT b.id, b.business_id, b.name, b.address, b.latitude, b.longitude, b.phone_number, b.timezone,
+            SELECT b.id, b.business_id, b.name, b.address, b.latitude, b.longitude, b.phone_number,
+                   b.country_code, b.region, b.city, b.postal_code, b.timezone,
                    b.is_active, b.sort_order, b.created_at, b.updated_at, b.deleted_at,
                    biz.id AS biz_id, biz.organization_id AS biz_organization_id, biz.name AS biz_name,
                    biz.slug AS biz_slug, biz.description AS biz_description, biz.status AS biz_status,
                    biz.is_verified AS biz_verified, biz.primary_category_id AS biz_primary_category_id,
+                   org.default_currency AS biz_currency, org.country_code AS biz_country_code,
                    cat.id AS cat_id, cat.name AS cat_name, cat.slug AS cat_slug,
                    (SELECT ma.url FROM business_media bm JOIN media_assets ma ON ma.id = bm.media_asset_id
                      WHERE bm.business_id = biz.id AND bm.role = 'logo' AND ma.deleted_at IS NULL LIMIT 1) AS logo_url,
@@ -38,6 +40,7 @@ public class BranchRepository {
                      WHERE bm.business_id = biz.id AND bm.role = 'gallery' AND ma.deleted_at IS NULL) AS gallery_urls
             FROM branches b
             JOIN businesses biz ON biz.id = b.business_id
+            LEFT JOIN organizations org ON org.id = biz.organization_id
             LEFT JOIN categories cat ON cat.id = biz.primary_category_id
             """;
 
@@ -60,10 +63,10 @@ public class BranchRepository {
         if (branch.getId() == null) {
             branch.onCreate();
             Long id = jdbc.insert("""
-                    INSERT INTO branches (business_id, name, address, latitude, longitude, phone_number, timezone,
-                                          is_active, sort_order, created_at, updated_at)
-                    VALUES (:businessId, :name, :address, :latitude, :longitude, :phoneNumber, :timezone,
-                            :active, :sortOrder, :createdAt, :updatedAt)
+                    INSERT INTO branches (business_id, name, address, latitude, longitude, phone_number, country_code,
+                                          region, city, postal_code, timezone, is_active, sort_order, created_at, updated_at)
+                    VALUES (:businessId, :name, :address, :latitude, :longitude, :phoneNumber, :countryCode,
+                            :region, :city, :postalCode, :timezone, :active, :sortOrder, :createdAt, :updatedAt)
                     """, bind(branch));
             branch.setId(id);
             return branch;
@@ -71,7 +74,8 @@ public class BranchRepository {
         branch.onUpdate();
         jdbc.update("""
                 UPDATE branches SET business_id = :businessId, name = :name, address = :address, latitude = :latitude,
-                    longitude = :longitude, phone_number = :phoneNumber, timezone = :timezone, is_active = :active,
+                    longitude = :longitude, phone_number = :phoneNumber, country_code = :countryCode, region = :region,
+                    city = :city, postal_code = :postalCode, timezone = :timezone, is_active = :active,
                     sort_order = :sortOrder, updated_at = :updatedAt
                 WHERE id = :id
                 """, bind(branch).addValue("id", branch.getId()));
@@ -147,7 +151,12 @@ public class BranchRepository {
         Branch branch = rows.mapBranch(rs);
         Business business = new Business();
         business.setId(JdbcSupport.getLong(rs, "biz_id"));
-        business.setOrganization(RowMappers.refOrg(JdbcSupport.getLong(rs, "biz_organization_id")));
+        com.hourslot.model.Organization organization = RowMappers.refOrg(JdbcSupport.getLong(rs, "biz_organization_id"));
+        if (organization != null) {
+            organization.setDefaultCurrency(JdbcSupport.optionalString(rs, "biz_currency"));
+            organization.setCountryCode(JdbcSupport.optionalString(rs, "biz_country_code"));
+            business.setOrganization(organization);
+        }
         business.setName(rs.getString("biz_name"));
         business.setSlug(rs.getString("biz_slug"));
         business.setDescription(rs.getString("biz_description"));
@@ -176,6 +185,10 @@ public class BranchRepository {
                 .addValue("latitude", branch.getLatitude())
                 .addValue("longitude", branch.getLongitude())
                 .addValue("phoneNumber", branch.getPhoneNumber())
+                .addValue("countryCode", branch.getCountryCode())
+                .addValue("region", branch.getRegion())
+                .addValue("city", branch.getCity())
+                .addValue("postalCode", branch.getPostalCode())
                 .addValue("timezone", branch.getTimezone())
                 .addValue("active", branch.isActive())
                 .addValue("sortOrder", branch.getSortOrder())

@@ -66,17 +66,14 @@ public class AvailabilityService {
             return availableSlots;
         }
 
-        LocalTime workStart = workingHour.getStartTime();
-        LocalTime workEnd = workingHour.getEndTime();
-        if (workStart == null || workEnd == null) {
+        List<TimeInterval> activeIntervals = calculateActiveIntervals(workingHour);
+        if (activeIntervals.isEmpty()) {
             return availableSlots;
         }
-
-        List<TimeInterval> activeIntervals = calculateActiveIntervals(workingHour, workStart, workEnd);
         List<Booking> activeBookings = getActiveBookingsForDate(branch, staff, date);
 
         int duration = service.getDurationMinutes();
-        int stepMinutes = 30;
+        int stepMinutes = workingHour.getSlotStepMinutes() > 0 ? workingHour.getSlotStepMinutes() : 30;
 
         for (TimeInterval interval : activeIntervals) {
             LocalTime current = interval.start;
@@ -115,14 +112,23 @@ public class AvailabilityService {
         return availableSlots;
     }
 
-    private List<TimeInterval> calculateActiveIntervals(ScheduleService.DayHours wh, LocalTime workStart, LocalTime workEnd) {
+    private List<TimeInterval> calculateActiveIntervals(ScheduleService.DayHours wh) {
         List<TimeInterval> intervals = new ArrayList<>();
-        intervals.add(new TimeInterval(workStart, workEnd));
+        if (wh.getIntervals() != null && !wh.getIntervals().isEmpty()) {
+            for (ScheduleService.TimeWindow window : wh.getIntervals()) {
+                if (window.getStartTime() != null && window.getEndTime() != null) {
+                    intervals.add(new TimeInterval(window.getStartTime(), window.getEndTime()));
+                }
+            }
+        } else if (wh.getStartTime() != null && wh.getEndTime() != null) {
+            intervals.add(new TimeInterval(wh.getStartTime(), wh.getEndTime()));
+        }
 
         if (wh.getBreaks() == null) {
             return intervals;
         }
         for (ScheduleService.TimeWindow b : wh.getBreaks()) {
+            if (b.getStartTime() == null || b.getEndTime() == null) continue;
             List<TimeInterval> nextIntervals = new ArrayList<>();
             for (TimeInterval interval : intervals) {
                 if (b.getStartTime().isBefore(interval.end) && b.getEndTime().isAfter(interval.start)) {

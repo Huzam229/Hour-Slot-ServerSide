@@ -32,10 +32,23 @@ public class SystemSettingService {
         return body;
     }
 
+    public String defaultCurrency() {
+        String value = readString("default_currency", "USD");
+        return value == null || value.isBlank() ? "USD" : value.trim().toUpperCase();
+    }
+
+    public String supportedCurrencyCodes() {
+        return readString("supported_currencies", "USD,PKR,AED,EUR,GBP");
+    }
+
     @Transactional
-    public Map<String, Object> updateAdminSettings(boolean registrationOpen, String supportedCurrencies, User actor) {
+    public Map<String, Object> updateAdminSettings(
+            boolean registrationOpen, String supportedCurrencies, String defaultCurrency, User actor) {
         write("registration_open", registrationOpen, actor);
         write("supported_currencies", supportedCurrencies, actor);
+        if (defaultCurrency != null && !defaultCurrency.isBlank()) {
+            write("default_currency", defaultCurrency.trim().toUpperCase(), actor);
+        }
         return asAdminSettings();
     }
 

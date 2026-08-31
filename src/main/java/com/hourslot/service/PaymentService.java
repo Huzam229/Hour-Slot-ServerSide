@@ -11,6 +11,7 @@ import com.hourslot.repository.CustomerPackageRepository;
 import com.hourslot.repository.PaymentRepository;
 import com.hourslot.repository.ServicePackageRepository;
 import com.hourslot.repository.UserRepository;
+import com.hourslot.util.MoneyAmounts;
 import com.stripe.Stripe;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
@@ -100,14 +101,21 @@ public class PaymentService {
             throw new IllegalStateException("Booking is missing service or branch data");
         }
 
-        long amountCents = Math.round(booking.getPrice() * 100);
+        long amountCents = MoneyAmounts.toStripeUnitAmount(booking.getPrice(), booking.getCurrency());
         if (amountCents <= 0) {
             throw new IllegalArgumentException("Booking price must be greater than zero for online payment");
         }
 
+        Long businessId = booking.getBranch() != null && booking.getBranch().getBusiness() != null
+                ? booking.getBranch().getBusiness().getId()
+                : null;
+        String successPath = businessId != null
+                ? frontendBaseUrl + "/profile/book/" + businessId + "/confirmation?bookingId=" + bookingId + "&payment=ONLINE"
+                : frontendBaseUrl + "/profile/bookings?payment=success";
+
         SessionCreateParams params = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
-                .setSuccessUrl(frontendBaseUrl + "/profile/bookings?payment=success")
+                .setSuccessUrl(successPath)
                 .setCancelUrl(frontendBaseUrl + "/profile/bookings?payment=cancelled")
                 .putMetadata("type", "BOOKING")
                 .putMetadata("bookingId", String.valueOf(bookingId))
@@ -116,7 +124,7 @@ public class PaymentService {
                                 .setQuantity(1L)
                                 .setPriceData(
                                         SessionCreateParams.LineItem.PriceData.builder()
-                                                .setCurrency("usd")
+                                                .setCurrency(MoneyAmounts.iso(booking.getCurrency()))
                                                 .setUnitAmount(amountCents)
                                                 .setProductData(
                                                         SessionCreateParams.LineItem.PriceData.ProductData.builder()
@@ -139,7 +147,7 @@ public class PaymentService {
         ServicePackage servicePackage = servicePackageRepository.findById(packageId)
                 .orElseThrow(() -> new IllegalArgumentException("Package not found: " + packageId));
 
-        long amountCents = Math.round(servicePackage.getPrice() * 100);
+        long amountCents = MoneyAmounts.toStripeUnitAmount(servicePackage.getPrice(), servicePackage.getCurrency());
         if (amountCents <= 0) {
             throw new IllegalArgumentException("Package price must be greater than zero for online payment");
         }
@@ -156,7 +164,7 @@ public class PaymentService {
                                 .setQuantity(1L)
                                 .setPriceData(
                                         SessionCreateParams.LineItem.PriceData.builder()
-                                                .setCurrency("usd")
+                                                .setCurrency(MoneyAmounts.iso(servicePackage.getCurrency()))
                                                 .setUnitAmount(amountCents)
                                                 .setProductData(
                                                         SessionCreateParams.LineItem.PriceData.ProductData.builder()

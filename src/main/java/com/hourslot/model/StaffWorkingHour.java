@@ -29,7 +29,14 @@ public class StaffWorkingHour {
 
     private boolean closed;
 
+    @Builder.Default
+    private int slotStepMinutes = 30;
+
     @JsonIgnoreProperties("workingHour")
     @Builder.Default
     private List<StaffBreak> breaks = new ArrayList<>();
+
+    @JsonIgnoreProperties("workingHour")
+    @Builder.Default
+    private List<StaffWorkingInterval> intervals = new ArrayList<>();
 }
