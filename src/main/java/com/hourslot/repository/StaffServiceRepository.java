@@ -6,11 +6,18 @@ import com.hourslot.model.Business;
 import com.hourslot.model.Service;
 import com.hourslot.model.Staff;
 import com.hourslot.model.StaffService;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.stereotype.Repository;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
 
 @Repository
 public class StaffServiceRepository {
@@ -18,6 +25,19 @@ public class StaffServiceRepository {
     private static final String SELECT = """
             SELECT id, staff_id, service_id, price_override
             FROM staff_services
+            """;
+
+    private static final String STAFF_SELECT = """
+            SELECT id, branch_id, user_id, display_name, designation, specialty, bio, rating_avg,
+                   is_active, sort_order, created_at, updated_at, deleted_at
+            FROM staff WHERE id IN (:ids)
+            """;
+
+    private static final String SERVICE_SELECT = """
+            SELECT id, business_id, name, description, base_price, currency, duration_minutes, buffer_minutes,
+                   max_concurrent, is_active, capacity, is_group_service, sort_order, metadata,
+                   created_at, updated_at, deleted_at
+            FROM services WHERE id IN (:ids)
             """;
 
     private final JdbcSupport jdbc;
@@ -29,7 +49,10 @@ public class StaffServiceRepository {
     }
 
     public Optional<StaffService> findById(Long id) {
-        return jdbc.findOne(SELECT + " WHERE id = :id", jdbc.params().addValue("id", id), rows.staffService);
+        Optional<StaffService> found = jdbc.findOne(SELECT + " WHERE id = :id",
+                jdbc.params().addValue("id", id), rows.staffService);
+        found.ifPresent(row -> attachDetails(List.of(row)));
+        return found;
     }
 
     public StaffService save(StaffService mapping) {
@@ -53,29 +76,87 @@ public class StaffServiceRepository {
     }
 
     public List<StaffService> findByStaff(Staff staff) {
-        return jdbc.findList(SELECT + " WHERE staff_id = :staffId",
+        List<StaffService> list = jdbc.findList(SELECT + " WHERE staff_id = :staffId",
                 jdbc.params().addValue("staffId", staff.getId()), rows.staffService);
+        attachDetails(list);
+        return list;
     }
 
     public List<StaffService> findByService(Service service) {
-        return jdbc.findList(SELECT + " WHERE service_id = :serviceId",
+        List<StaffService> list = jdbc.findList(SELECT + " WHERE service_id = :serviceId",
                 jdbc.params().addValue("serviceId", service.getId()), rows.staffService);
+        attachDetails(list);
+        return list;
     }
 
     public Optional<StaffService> findByStaffAndService(Staff staff, Service service) {
-        return jdbc.findOne(SELECT + " WHERE staff_id = :staffId AND service_id = :serviceId",
+        Optional<StaffService> found = jdbc.findOne(
+                SELECT + " WHERE staff_id = :staffId AND service_id = :serviceId",
                 jdbc.params().addValue("staffId", staff.getId()).addValue("serviceId", service.getId()),
                 rows.staffService);
+        found.ifPresent(row -> attachDetails(List.of(row)));
+        return found;
     }
 
     public List<StaffService> findByStaffBranchBusiness(Business business) {
-        return jdbc.findList("""
+        List<StaffService> list = jdbc.findList("""
                 SELECT ss.id, ss.staff_id, ss.service_id, ss.price_override
                 FROM staff_services ss
                 JOIN staff s ON s.id = ss.staff_id
                 JOIN branches br ON br.id = s.branch_id
                 WHERE br.business_id = :bizId
+                  AND s.deleted_at IS NULL
+                ORDER BY ss.id
                 """, jdbc.params().addValue("bizId", business.getId()), rows.staffService);
+        attachDetails(list);
+        return list;
+    }
+
+    private void attachDetails(List<StaffService> mappings) {
+        if (mappings == null || mappings.isEmpty()) {
+            return;
+        }
+        Set<Long> staffIds = new LinkedHashSet<>();
+        Set<Long> serviceIds = new LinkedHashSet<>();
+        for (StaffService mapping : mappings) {
+            if (mapping.getStaff() != null && mapping.getStaff().getId() != null) {
+                staffIds.add(mapping.getStaff().getId());
+            }
+            if (mapping.getService() != null && mapping.getService().getId() != null) {
+                serviceIds.add(mapping.getService().getId());
+            }
+        }
+        Map<Long, Staff> staff = loadMap(STAFF_SELECT, staffIds, rows.staff, Staff::getId);
+        Map<Long, Service> services = loadMap(SERVICE_SELECT, serviceIds, rows.service, Service::getId);
+        for (StaffService mapping : mappings) {
+            if (mapping.getStaff() != null) {
+                Staff member = staff.get(mapping.getStaff().getId());
+                if (member != null) {
+                    mapping.setStaff(member);
+                }
+            }
+            if (mapping.getService() != null) {
+                Service service = services.get(mapping.getService().getId());
+                if (service != null) {
+                    mapping.setService(service);
+                }
+            }
+        }
+    }
+
+    private <T> Map<Long, T> loadMap(String sql, Set<Long> ids, RowMapper<T> mapper, Function<T, Long> idFn) {
+        if (ids == null || ids.isEmpty()) {
+            return Map.of();
+        }
+        List<T> found = jdbc.findList(sql, jdbc.params().addValue("ids", new ArrayList<>(ids)), mapper);
+        Map<Long, T> map = new LinkedHashMap<>();
+        for (T row : found) {
+            Long id = idFn.apply(row);
+            if (id != null) {
+                map.put(id, row);
+            }
+        }
+        return map;
     }
 
     private MapSqlParameterSource bind(StaffService mapping) {

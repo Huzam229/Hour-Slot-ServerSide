@@ -100,6 +100,14 @@ public class Booking {
     }
 
     @JsonIgnore
+    public Business resolvedBusiness() {
+        if (business != null) {
+            return business;
+        }
+        return branch == null ? null : branch.getBusiness();
+    }
+
+    @JsonIgnore
     public BookingItem primaryItem() {
         if (items == null || items.isEmpty()) {
             return null;

@@ -106,9 +106,7 @@ public class PaymentService {
             throw new IllegalArgumentException("Booking price must be greater than zero for online payment");
         }
 
-        Long businessId = booking.getBranch() != null && booking.getBranch().getBusiness() != null
-                ? booking.getBranch().getBusiness().getId()
-                : null;
+        Long businessId = booking.resolvedBusiness() != null ? booking.resolvedBusiness().getId() : null;
         String successPath = businessId != null
                 ? frontendBaseUrl + "/profile/book/" + businessId + "/confirmation?bookingId=" + bookingId + "&payment=ONLINE"
                 : frontendBaseUrl + "/profile/bookings?payment=success";
@@ -264,9 +262,11 @@ public class PaymentService {
         booking.setPaymentMethod("ONLINE");
         bookingRepository.save(booking);
 
+        Business paidBusiness = booking.resolvedBusiness();
         paymentRepository.save(Payment.builder()
-                .organization(booking.getOrganization() != null ? booking.getOrganization() : booking.getBranch().getBusiness().getOrganization())
-                .business(booking.getBusiness() != null ? booking.getBusiness() : booking.getBranch().getBusiness())
+                .organization(booking.getOrganization() != null ? booking.getOrganization()
+                        : (paidBusiness == null ? null : paidBusiness.getOrganization()))
+                .business(paidBusiness)
                 .user(booking.getCustomerUser())
                 .purpose("BOOKING")
                 .referenceType("BOOKING")

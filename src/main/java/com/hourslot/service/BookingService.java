@@ -320,7 +320,7 @@ public class BookingService {
         } else if (role == UserRole.CUSTOMER && booking.getCustomer() != null && booking.getCustomer().getId().equals(userId)) {
             authorized = true;
         } else if (role == UserRole.BUSINESS_OWNER) {
-            User owner = tenancyService.findOwner(booking.getBranch().getBusiness()).orElse(null);
+            User owner = tenancyService.findOwner(booking.resolvedBusiness()).orElse(null);
             authorized = owner != null && owner.getId().equals(userId);
         } else if (role == UserRole.BUSINESS_STAFF) {
             Staff staff = booking.getStaff();

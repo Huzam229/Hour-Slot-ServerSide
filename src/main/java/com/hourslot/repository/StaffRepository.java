@@ -35,8 +35,10 @@ public class StaffRepository {
     }
 
     public Optional<Staff> findById(Long id) {
-        return jdbc.findOne(SELECT + " WHERE id = :id AND deleted_at IS NULL",
+        Optional<Staff> found = jdbc.findOne(SELECT + " WHERE id = :id AND deleted_at IS NULL",
                 jdbc.params().addValue("id", id), rows.staff);
+        found.ifPresent(this::hydrateBranchBusiness);
+        return found;
     }
 
     public Staff save(Staff staff) {

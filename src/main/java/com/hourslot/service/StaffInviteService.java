@@ -78,7 +78,7 @@ public class StaffInviteService {
         }
         Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new IllegalArgumentException("Branch not found."));
-        if (!branch.getBusiness().getId().equals(business.getId())) {
+        if (branch.getBusiness() == null || !business.getId().equals(branch.getBusiness().getId())) {
             throw new IllegalArgumentException("Branch does not belong to this business.");
         }
 

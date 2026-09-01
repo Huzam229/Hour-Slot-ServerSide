@@ -167,8 +167,14 @@ public class BusinessController {
         private String description;
         @NotNull
         private Double price;
+        private String currency;
         @NotNull
         private Integer durationMinutes;
+        private Integer bufferMinutes;
+        private Integer maxConcurrent;
+        private Boolean active;
+        private Integer capacity;
+        private Boolean groupService;
     }
 
     @Data
@@ -396,8 +402,13 @@ public class BusinessController {
                 .name(request.getName())
                 .description(request.getDescription())
                 .basePrice(java.math.BigDecimal.valueOf(request.getPrice()))
-                .currency(catalogLocaleService.resolveCurrency(business))
+                .currency(catalogLocaleService.normalizeCurrency(request.getCurrency(), business))
                 .durationMinutes(request.getDurationMinutes())
+                .bufferMinutes(request.getBufferMinutes() != null ? request.getBufferMinutes() : 0)
+                .maxConcurrent(request.getMaxConcurrent() != null ? request.getMaxConcurrent() : 1)
+                .active(request.getActive() != null ? request.getActive() : true)
+                .capacity(request.getCapacity() != null ? request.getCapacity() : 1)
+                .groupService(Boolean.TRUE.equals(request.getGroupService()))
                 .build();
 
         serviceRepository.save(service);
@@ -434,7 +445,7 @@ public class BusinessController {
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found for owner."));
 
-        if (!branch.getBusiness().getId().equals(business.getId())) {
+        if (!tenancyService.branchBelongsToBusiness(branch, business)) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
         }
 
@@ -514,7 +525,7 @@ public class BusinessController {
         Staff staff = staffRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Staff not found."));
         Business business = tenancyService.requireBusinessForUser(user);
-        if (!staff.getBranch().getBusiness().getId().equals(business.getId())) {
+        if (!tenancyService.staffBelongsToBusiness(staff, business)) {
             return ResponseEntity.status(403).body(new MessageResponse("Unauthorized."));
         }
         boolean isOwner = userDetails.getAuthorities().stream()
@@ -550,6 +561,9 @@ public class BusinessController {
         } else {
             Staff staff = staffRepository.findByUser(user)
                     .orElseThrow(() -> new RuntimeException("Staff account not found."));
+            if (staff.getBranch() == null || staff.getBranch().getBusiness() == null) {
+                throw new RuntimeException("Staff account is not linked to a business.");
+            }
             business = staff.getBranch().getBusiness();
         }
 
@@ -572,7 +586,7 @@ public class BusinessController {
         if (userDetails.getRole() == UserRole.BUSINESS_OWNER) {
             Business business = tenancyService.findBusinessForUser(user)
                     .orElseThrow(() -> new RuntimeException("Business not found for owner."));
-            if (!branch.getBusiness().getId().equals(business.getId())) {
+            if (!tenancyService.branchBelongsToBusiness(branch, business)) {
                 return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
             }
         } else {
@@ -664,7 +678,7 @@ public class BusinessController {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
-        if (!branch.getBusiness().getId().equals(business.getId())) {
+        if (!tenancyService.branchBelongsToBusiness(branch, business)) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
         }
 
@@ -720,7 +734,7 @@ public class BusinessController {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
-        if (!branch.getBusiness().getId().equals(business.getId())) {
+        if (!tenancyService.branchBelongsToBusiness(branch, business)) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
         }
 
@@ -886,7 +900,7 @@ public class BusinessController {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
-        if (!branch.getBusiness().getId().equals(business.getId())) {
+        if (!tenancyService.branchBelongsToBusiness(branch, business)) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
         }
 
@@ -975,7 +989,7 @@ public class BusinessController {
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
-        if (!branch.getBusiness().getId().equals(business.getId())) {
+        if (!tenancyService.branchBelongsToBusiness(branch, business)) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
         }
 
@@ -1021,7 +1035,7 @@ public class BusinessController {
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
-        if (!branch.getBusiness().getId().equals(business.getId())) {
+        if (!tenancyService.branchBelongsToBusiness(branch, business)) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
         }
 
@@ -1049,8 +1063,23 @@ public class BusinessController {
         service.setName(request.getName());
         service.setDescription(request.getDescription());
         service.setPrice(request.getPrice());
-        service.setCurrency(catalogLocaleService.resolveCurrency(business));
+        service.setCurrency(catalogLocaleService.normalizeCurrency(request.getCurrency(), business));
         service.setDurationMinutes(request.getDurationMinutes());
+        if (request.getBufferMinutes() != null) {
+            service.setBufferMinutes(request.getBufferMinutes());
+        }
+        if (request.getMaxConcurrent() != null) {
+            service.setMaxConcurrent(request.getMaxConcurrent());
+        }
+        if (request.getActive() != null) {
+            service.setActive(request.getActive());
+        }
+        if (request.getCapacity() != null) {
+            service.setCapacity(request.getCapacity());
+        }
+        if (request.getGroupService() != null) {
+            service.setGroupService(request.getGroupService());
+        }
 
         serviceRepository.save(service);
         return ResponseEntity.ok(new MessageResponse("Service updated successfully!"));
@@ -1092,8 +1121,8 @@ public class BusinessController {
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
-        if (!staff.getBranch().getBusiness().getId().equals(business.getId()) ||
-            !branch.getBusiness().getId().equals(business.getId())) {
+        if (!tenancyService.staffBelongsToBusiness(staff, business) ||
+            !tenancyService.branchBelongsToBusiness(branch, business)) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
         }
 
@@ -1123,7 +1152,7 @@ public class BusinessController {
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
-        if (!staff.getBranch().getBusiness().getId().equals(business.getId())) {
+        if (!tenancyService.staffBelongsToBusiness(staff, business)) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
         }
 
@@ -1144,7 +1173,7 @@ public class BusinessController {
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
-        if (!branch.getBusiness().getId().equals(business.getId())) {
+        if (!tenancyService.branchBelongsToBusiness(branch, business)) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
         }
 
@@ -1172,7 +1201,7 @@ public class BusinessController {
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
-        if (!branch.getBusiness().getId().equals(business.getId())) {
+        if (!tenancyService.branchBelongsToBusiness(branch, business)) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
         }
 
@@ -1198,7 +1227,7 @@ public class BusinessController {
 
         java.util.Optional<BranchWorkingHour> branchHour = branchWorkingHourRepository.findById(id);
         if (branchHour.isPresent()) {
-            if (!branchHour.get().getBranch().getBusiness().getId().equals(business.getId())) {
+            if (!tenancyService.branchBelongsToBusiness(branchHour.get().getBranch(), business)) {
                 return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
             }
             branchWorkingHourRepository.delete(branchHour.get());
@@ -1206,7 +1235,7 @@ public class BusinessController {
         }
         StaffWorkingHour staffHour = staffWorkingHourRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Working hours record not found."));
-        if (!staffHour.getStaff().getBranch().getBusiness().getId().equals(business.getId())) {
+        if (!tenancyService.staffBelongsToBusiness(staffHour.getStaff(), business)) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
         }
         staffWorkingHourRepository.delete(staffHour);
@@ -1224,7 +1253,7 @@ public class BusinessController {
 
         java.util.Optional<BranchHoliday> holiday = branchHolidayRepository.findById(id);
         if (holiday.isPresent()) {
-            if (!holiday.get().getBranch().getBusiness().getId().equals(business.getId())) {
+            if (!tenancyService.branchBelongsToBusiness(holiday.get().getBranch(), business)) {
                 return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
             }
             branchHolidayRepository.delete(holiday.get());
@@ -1232,7 +1261,7 @@ public class BusinessController {
         }
         StaffTimeOff timeOff = staffTimeOffRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Holiday record not found."));
-        if (!timeOff.getStaff().getBranch().getBusiness().getId().equals(business.getId())) {
+        if (!tenancyService.staffBelongsToBusiness(timeOff.getStaff(), business)) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
         }
         staffTimeOffRepository.delete(timeOff);
@@ -1250,7 +1279,11 @@ public class BusinessController {
 
         java.util.Optional<BranchBreak> branchBreak = branchBreakRepository.findById(id);
         if (branchBreak.isPresent()) {
-            if (!branchBreak.get().getWorkingHour().getBranch().getBusiness().getId().equals(business.getId())) {
+            BranchWorkingHour hour = branchBreak.get().getWorkingHour();
+            if (hour != null && hour.getId() != null && hour.getBranch() == null) {
+                hour = branchWorkingHourRepository.findById(hour.getId()).orElse(hour);
+            }
+            if (!tenancyService.branchBelongsToBusiness(hour == null ? null : hour.getBranch(), business)) {
                 return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
             }
             branchBreakRepository.delete(branchBreak.get());
@@ -1258,7 +1291,12 @@ public class BusinessController {
         }
         StaffBreak staffBreak = staffBreakRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Break record not found."));
-        if (!staffBreak.getWorkingHour().getStaff().getBranch().getBusiness().getId().equals(business.getId())) {
+        StaffWorkingHour staffHour = staffBreak.getWorkingHour();
+        if (staffHour != null && staffHour.getId() != null
+                && (staffHour.getStaff() == null || staffHour.getStaff().getBranch() == null)) {
+            staffHour = staffWorkingHourRepository.findById(staffHour.getId()).orElse(staffHour);
+        }
+        if (!tenancyService.staffBelongsToBusiness(staffHour == null ? null : staffHour.getStaff(), business)) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
         }
         staffBreakRepository.delete(staffBreak);
@@ -1288,6 +1326,7 @@ public class BusinessController {
         private String description;
         @NotNull
         private Double price;
+        private String currency;
         @NotNull
         private Integer sessionsCount;
         private Integer expiryDays;
@@ -1321,7 +1360,7 @@ public class BusinessController {
                 .name(request.getName())
                 .description(request.getDescription())
                 .price(request.getPrice())
-                .currency(catalogLocaleService.resolveCurrency(business))
+                .currency(catalogLocaleService.normalizeCurrency(request.getCurrency(), business))
                 .sessionsCount(request.getSessionsCount())
                 .expiryDays(request.getExpiryDays() != null ? request.getExpiryDays() : 0)
                 .active(request.getActive() != null ? request.getActive() : true)
@@ -1355,7 +1394,7 @@ public class BusinessController {
         pkg.setName(request.getName());
         pkg.setDescription(request.getDescription());
         pkg.setPrice(request.getPrice());
-        pkg.setCurrency(catalogLocaleService.resolveCurrency(business));
+        pkg.setCurrency(catalogLocaleService.normalizeCurrency(request.getCurrency(), business));
         pkg.setSessionsCount(request.getSessionsCount());
         pkg.setExpiryDays(request.getExpiryDays() != null ? request.getExpiryDays() : 0);
         if (request.getActive() != null) {
@@ -1423,7 +1462,7 @@ public class BusinessController {
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business profile not found."));
 
-        if (!staff.getBranch().getBusiness().getId().equals(business.getId()) ||
+        if (!tenancyService.staffBelongsToBusiness(staff, business) ||
             !service.getBusiness().getId().equals(business.getId())) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
         }
@@ -1451,7 +1490,7 @@ public class BusinessController {
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business profile not found."));
 
-        if (!ss.getStaff().getBranch().getBusiness().getId().equals(business.getId())) {
+        if (!tenancyService.staffBelongsToBusiness(ss.getStaff(), business)) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
         }
 
@@ -1472,7 +1511,7 @@ public class BusinessController {
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business profile not found."));
 
-        if (!ss.getStaff().getBranch().getBusiness().getId().equals(business.getId())) {
+        if (!tenancyService.staffBelongsToBusiness(ss.getStaff(), business)) {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
         }
 

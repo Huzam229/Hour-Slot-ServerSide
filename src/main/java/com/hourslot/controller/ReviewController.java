@@ -75,9 +75,14 @@ public class ReviewController {
         }
 
         // 4. Save review
+        Business reviewBusiness = booking.resolvedBusiness();
+        if (reviewBusiness == null) {
+            return ResponseEntity.badRequest().body(new MessageResponse("Error: Booking is not linked to a business."));
+        }
+
         Review review = Review.builder()
                 .customerUser(booking.getCustomerUser())
-                .business(booking.getBranch().getBusiness())
+                .business(reviewBusiness)
                 .booking(booking)
                 .rating(request.getRating())
                 .comment(request.getComment())

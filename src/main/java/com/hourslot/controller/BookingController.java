@@ -129,8 +129,8 @@ public class BookingController {
                 );
             }
 
-            if (booking.getBranch() != null && booking.getBranch().getBusiness() != null) {
-                tenancyService.findOwner(booking.getBranch().getBusiness())
+            if (booking.resolvedBusiness() != null) {
+                tenancyService.findOwner(booking.resolvedBusiness())
                         .ifPresent(owner -> notificationService.notify(
                                 owner,
                                 "New booking",
@@ -157,7 +157,7 @@ public class BookingController {
         if (userDetails.getRole() == UserRole.BUSINESS_OWNER) {
             Business business = tenancyService.findBusinessForUser(user)
                     .orElseThrow(() -> new RuntimeException("Business not found."));
-            if (!branch.getBusiness().getId().equals(business.getId())) {
+            if (!tenancyService.branchBelongsToBusiness(branch, business)) {
                 return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized branch access."));
             }
         } else if (userDetails.getRole() == UserRole.BUSINESS_STAFF) {
@@ -192,13 +192,14 @@ public class BookingController {
         } else if (userDetails.getRole() == UserRole.BUSINESS_OWNER) {
             Business business = tenancyService.findBusinessForUser(user)
                     .orElseThrow(() -> new RuntimeException("Business not found."));
-            if (booking.getBranch().getBusiness().getId().equals(business.getId())) {
+            if (tenancyService.bookingBelongsToBusiness(booking, business)) {
                 isAuthorized = true;
             }
         } else if (userDetails.getRole() == UserRole.BUSINESS_STAFF) {
             Staff staff = staffRepository.findByUser(user)
                     .orElseThrow(() -> new RuntimeException("Staff account not found."));
-            if (booking.getBranch().getId().equals(staff.getBranch().getId())) {
+            if (booking.getBranch() != null && staff.getBranch() != null
+                    && booking.getBranch().getId().equals(staff.getBranch().getId())) {
                 isAuthorized = true;
             }
         }
@@ -233,13 +234,14 @@ public class BookingController {
         if (userDetails.getRole() == UserRole.BUSINESS_OWNER) {
             Business business = tenancyService.findBusinessForUser(user)
                     .orElseThrow(() -> new RuntimeException("Business not found."));
-            if (booking.getBranch().getBusiness().getId().equals(business.getId())) {
+            if (tenancyService.bookingBelongsToBusiness(booking, business)) {
                 isAuthorized = true;
             }
         } else if (userDetails.getRole() == UserRole.BUSINESS_STAFF) {
             Staff staff = staffRepository.findByUser(user)
                     .orElseThrow(() -> new RuntimeException("Staff account not found."));
-            if (booking.getBranch().getId().equals(staff.getBranch().getId())) {
+            if (booking.getBranch() != null && staff.getBranch() != null
+                    && booking.getBranch().getId().equals(staff.getBranch().getId())) {
                 isAuthorized = true;
             }
         } else if (userDetails.getRole() == UserRole.CUSTOMER && booking.getCustomer().getId().equals(user.getId())) {

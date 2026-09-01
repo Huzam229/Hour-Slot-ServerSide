@@ -29,7 +29,7 @@ public class CatalogLocaleService {
 
     public String resolveCurrency(Organization organization) {
         Organization loaded = organization;
-        if (loaded != null && loaded.getId() != null && loaded.getDefaultCurrency() == null) {
+        if (loaded != null && loaded.getId() != null) {
             loaded = organizationRepository.findById(loaded.getId()).orElse(loaded);
         }
         if (loaded != null && loaded.getDefaultCurrency() != null && !loaded.getDefaultCurrency().isBlank()) {
@@ -43,6 +43,13 @@ public class CatalogLocaleService {
             return systemSettingService.defaultCurrency();
         }
         return resolveCurrency(business.getOrganization());
+    }
+
+    public String normalizeCurrency(String currency, Business business) {
+        if (currency != null && !currency.isBlank()) {
+            return currency.trim().toUpperCase(Locale.ROOT);
+        }
+        return resolveCurrency(business);
     }
 
     public void applyCurrencyToCatalog(Long organizationId, String currency) {

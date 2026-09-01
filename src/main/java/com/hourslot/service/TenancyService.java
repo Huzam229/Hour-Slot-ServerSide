@@ -1,11 +1,14 @@
 package com.hourslot.service;
 
+import com.hourslot.model.Booking;
+import com.hourslot.model.Branch;
 import com.hourslot.model.Business;
 import com.hourslot.model.MemberRole;
 import com.hourslot.model.Organization;
 import com.hourslot.model.OrganizationMember;
 import com.hourslot.model.Staff;
 import com.hourslot.model.User;
+import com.hourslot.repository.BranchRepository;
 import com.hourslot.repository.BusinessRepository;
 import com.hourslot.repository.MemberRoleRepository;
 import com.hourslot.repository.OrganizationMemberRepository;
@@ -25,6 +28,7 @@ public class TenancyService {
     private final OrganizationRepository organizationRepository;
     private final OrganizationMemberRepository organizationMemberRepository;
     private final BusinessRepository businessRepository;
+    private final BranchRepository branchRepository;
     private final StaffRepository staffRepository;
     private final MemberRoleRepository memberRoleRepository;
     private final RbacService rbacService;
@@ -35,6 +39,7 @@ public class TenancyService {
             OrganizationRepository organizationRepository,
             OrganizationMemberRepository organizationMemberRepository,
             BusinessRepository businessRepository,
+            BranchRepository branchRepository,
             StaffRepository staffRepository,
             MemberRoleRepository memberRoleRepository,
             RbacService rbacService,
@@ -43,6 +48,7 @@ public class TenancyService {
         this.organizationRepository = organizationRepository;
         this.organizationMemberRepository = organizationMemberRepository;
         this.businessRepository = businessRepository;
+        this.branchRepository = branchRepository;
         this.staffRepository = staffRepository;
         this.memberRoleRepository = memberRoleRepository;
         this.rbacService = rbacService;
@@ -113,7 +119,8 @@ public class TenancyService {
         if (owned.isPresent()) {
             return owned;
         }
-        return staffRepository.findByUser(user).map(staff -> staff.getBranch().getBusiness());
+        return staffRepository.findByUser(user)
+                .map(staff -> staff.getBranch() == null ? null : staff.getBranch().getBusiness());
     }
 
     @Transactional(readOnly = true)
@@ -139,8 +146,65 @@ public class TenancyService {
     }
 
     @Transactional(readOnly = true)
+    public boolean branchBelongsToBusiness(Branch branch, Business business) {
+        Long expectedId = business == null ? null : business.getId();
+        Long actualId = businessIdOf(branch);
+        return expectedId != null && expectedId.equals(actualId);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean staffBelongsToBusiness(Staff staff, Business business) {
+        if (staff == null) {
+            return false;
+        }
+        if (staff.getBranch() != null && businessIdOf(staff.getBranch()) != null) {
+            return branchBelongsToBusiness(staff.getBranch(), business);
+        }
+        if (staff.getId() == null) {
+            return false;
+        }
+        return staffRepository.findById(staff.getId())
+                .map(loaded -> branchBelongsToBusiness(loaded.getBranch(), business))
+                .orElse(false);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean bookingBelongsToBusiness(Booking booking, Business business) {
+        Long expectedId = business == null ? null : business.getId();
+        Long actualId = businessIdOf(booking);
+        return expectedId != null && expectedId.equals(actualId);
+    }
+
+    @Transactional(readOnly = true)
+    public Long businessIdOf(Booking booking) {
+        if (booking == null) {
+            return null;
+        }
+        if (booking.getBusiness() != null && booking.getBusiness().getId() != null) {
+            return booking.getBusiness().getId();
+        }
+        return businessIdOf(booking.getBranch());
+    }
+
+    @Transactional(readOnly = true)
+    public Long businessIdOf(Branch branch) {
+        if (branch == null) {
+            return null;
+        }
+        if (branch.getBusiness() != null && branch.getBusiness().getId() != null) {
+            return branch.getBusiness().getId();
+        }
+        if (branch.getId() == null) {
+            return null;
+        }
+        return branchRepository.findById(branch.getId())
+                .map(loaded -> loaded.getBusiness() == null ? null : loaded.getBusiness().getId())
+                .orElse(null);
+    }
+
+    @Transactional(readOnly = true)
     public Optional<User> findOwner(Business business) {
-        if (business.getOrganization() == null) {
+        if (business == null || business.getOrganization() == null) {
             return Optional.empty();
         }
         List<OrganizationMember> members = organizationMemberRepository
