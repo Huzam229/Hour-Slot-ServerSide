@@ -126,7 +126,6 @@ public class BranchRepository {
                   AND b.deleted_at IS NULL
                   AND biz.deleted_at IS NULL
                   AND biz.status = 'APPROVED'
-                  AND biz.is_verified = true
                   AND (
                     6371000 * acos(
                       LEAST(1.0, GREATEST(-1.0,

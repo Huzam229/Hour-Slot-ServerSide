@@ -4,6 +4,7 @@ import com.hourslot.dto.MessageResponse;
 import com.hourslot.model.User;
 import com.hourslot.repository.UserRepository;
 import com.hourslot.security.CustomUserDetails;
+import com.hourslot.service.NotificationPreferenceService;
 import com.hourslot.service.RbacService;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -22,6 +23,9 @@ public class UserProfileController {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private NotificationPreferenceService notificationPreferenceService;
 
     @Autowired
     private RbacService rbacService;
@@ -78,5 +82,20 @@ public class UserProfileController {
 
         userRepository.save(user);
         return ResponseEntity.ok(new MessageResponse("Profile updated successfully."));
+    }
+
+    @GetMapping("/me/notification-preferences")
+    public ResponseEntity<?> getNotificationPreferences(@AuthenticationPrincipal CustomUserDetails userDetails) {
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        notificationPreferenceService.ensureDefaults(user);
+        return ResponseEntity.ok(notificationPreferenceService.getPreferences(user));
+    }
+
+    @PutMapping("/me/notification-preferences")
+    public ResponseEntity<?> updateNotificationPreferences(
+            @RequestBody Map<String, Boolean> request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        User user = userRepository.findById(userDetails.getId()).orElseThrow();
+        return ResponseEntity.ok(notificationPreferenceService.updatePreferences(user, request));
     }
 }

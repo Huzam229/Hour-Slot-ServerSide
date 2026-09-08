@@ -52,6 +52,8 @@ public class VerificationDocumentController {
         body.put("documents", docs);
         body.put("readiness", verificationDocumentService.readiness(business));
         body.put("requiredTypes", verificationDocumentService.requiredTypeCatalog());
+        body.put("tier1Types", verificationDocumentService.tier1Catalog());
+        body.put("tier2Types", verificationDocumentService.tier2Catalog());
         return ResponseEntity.ok(body);
     }
 
@@ -79,6 +81,8 @@ public class VerificationDocumentController {
         view.put("id", doc.getId());
         view.put("documentType", doc.getDocumentType());
         view.put("label", VerificationDocumentService.labelFor(doc.getDocumentType()));
+        view.put("hint", VerificationDocumentService.hintFor(doc.getDocumentType()));
+        view.put("tier", VerificationDocumentService.tierFor(doc.getDocumentType()));
         view.put("status", doc.getStatus());
         view.put("originalFilename", doc.getOriginalFilename());
         view.put("url", doc.getMediaAsset() != null ? doc.getMediaAsset().getUrl() : null);

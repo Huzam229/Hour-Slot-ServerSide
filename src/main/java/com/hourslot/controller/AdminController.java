@@ -187,13 +187,14 @@ public class AdminController {
             double totalRev = monthBookings.stream().mapToDouble(Booking::getPrice).sum();
             double totalComm = 0.0;
 
-            // Seed mock metrics if data is sparse to make UI charts look rich immediately
             if (count == 0) {
-                // Mock scaling factor based on index
-                int factor = 6 - i; 
-                count = factor * 4L + 5;
-                totalRev = count * 65.0;
-                totalComm = totalRev * 0.12;
+                trend.add(new RevenueTrendPoint(
+                        targetMonth.format(DateTimeFormatter.ofPattern("MMM")),
+                        0,
+                        0.0,
+                        0.0
+                ));
+                continue;
             }
 
             trend.add(new RevenueTrendPoint(
@@ -353,6 +354,8 @@ public class AdminController {
                     view.put("id", doc.getId());
                     view.put("documentType", doc.getDocumentType());
                     view.put("label", VerificationDocumentService.labelFor(doc.getDocumentType()));
+                    view.put("hint", VerificationDocumentService.hintFor(doc.getDocumentType()));
+                    view.put("tier", VerificationDocumentService.tierFor(doc.getDocumentType()));
                     view.put("status", doc.getStatus());
                     view.put("originalFilename", doc.getOriginalFilename());
                     view.put("url", doc.getMediaAsset() != null ? doc.getMediaAsset().getUrl() : null);
@@ -381,6 +384,7 @@ public class AdminController {
             HttpServletRequest request) {
         Business business = businessRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Business not found with id: " + id));
+        verificationDocumentService.requireReadyForListing(business);
         business.setStatus(BusinessStatus.APPROVED);
         business.setRejectionReason(null);
         businessRepository.save(business);

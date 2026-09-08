@@ -36,6 +36,10 @@ public class StaffInviteService {
     private final RbacService rbacService;
     private final EntitlementService entitlementService;
     private final PasswordEncoder passwordEncoder;
+    private final MailService mailService;
+
+    @org.springframework.beans.factory.annotation.Value("${app.frontend-base-url:http://localhost:3000}")
+    private String frontendBaseUrl;
 
     public StaffInviteService(
             StaffInviteRepository staffInviteRepository,
@@ -45,7 +49,8 @@ public class StaffInviteService {
             OrganizationMemberRepository organizationMemberRepository,
             RbacService rbacService,
             EntitlementService entitlementService,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            MailService mailService) {
         this.staffInviteRepository = staffInviteRepository;
         this.branchRepository = branchRepository;
         this.staffRepository = staffRepository;
@@ -54,6 +59,7 @@ public class StaffInviteService {
         this.rbacService = rbacService;
         this.entitlementService = entitlementService;
         this.passwordEncoder = passwordEncoder;
+        this.mailService = mailService;
     }
 
     @Transactional(readOnly = true)
@@ -106,6 +112,15 @@ public class StaffInviteService {
         payload.put("invite", toView(invite));
         payload.put("inviteToken", rawToken);
         payload.put("acceptPath", "/auth/accept-invite?token=" + rawToken);
+
+        String acceptUrl = frontendBaseUrl + "/auth/accept-invite?token=" + rawToken;
+        mailService.sendStaffInviteEmail(
+                invite.getEmail(),
+                invite.getDisplayName(),
+                business.getName(),
+                branch.getName(),
+                acceptUrl);
+
         return payload;
     }
 

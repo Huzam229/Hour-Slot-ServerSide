@@ -92,7 +92,7 @@ public class BookingService {
         com.hourslot.model.Service service = serviceRepository.findById(serviceId)
                 .orElseThrow(() -> new RuntimeException("Service not found."));
 
-        if (business.getStatus() != BusinessStatus.APPROVED || !business.isVerified()) {
+        if (business.getStatus() != BusinessStatus.APPROVED) {
             throw new RuntimeException("This business is not currently accepting bookings.");
         }
 
