@@ -35,7 +35,7 @@ public class BookingRepository {
             client_notes, internal_notes, source, customer_package_id, version, created_at, updated_at, deleted_at
             """;
 
-    private static final String SELECT = "SELECT " + COLUMNS + " FROM bookings";
+    private static final String SELECT = "SELECT " + COLUMNS + " FROM bookings ";
 
     private static final String SELECT_B = """
             SELECT DISTINCT b.id, b.public_code, b.customer_user_id, b.organization_id, b.business_id, b.branch_id,
@@ -126,7 +126,7 @@ public class BookingRepository {
             return List.of();
         }
         List<Booking> bookings = findBookings(SELECT + """
-                WHERE branch_id = :branchId
+                 WHERE branch_id = :branchId
                   AND booking_time BETWEEN :start AND :end
                   AND status IN (:statuses)
                   AND deleted_at IS NULL

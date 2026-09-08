@@ -6,6 +6,8 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -44,6 +46,10 @@ public class Staff {
     private LocalDateTime updatedAt;
 
     private LocalDateTime deletedAt;
+
+    @JsonProperty("services")
+    @Builder.Default
+    private List<Service> allocatedServices = new ArrayList<>();
 
     @JsonProperty("name")
     public String getName() {

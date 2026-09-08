@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -38,6 +39,12 @@ public class PricingService {
     }
 
     @Data
+    public static class SlotStaff {
+        private Long id;
+        private String name;
+    }
+
+    @Data
     public static class PricedSlot {
         private String startTime;
         private String endTime;
@@ -47,6 +54,9 @@ public class PricingService {
         private String pricingKind;
         private String pricingLabel;
         private String currency;
+        private boolean available = true;
+        private String availability = "AVAILABLE";
+        private List<SlotStaff> availableStaff = new ArrayList<>();
     }
 
     private final TimeOfDayPricingRepository timeOfDayPricingRepository;
@@ -116,6 +126,9 @@ public class PricingService {
         slot.setPricingKind(quote.getKind().name());
         slot.setPricingLabel(quote.getPricingLabel());
         slot.setCurrency(quote.getCurrency());
+        slot.setAvailable(true);
+        slot.setAvailability("AVAILABLE");
+        slot.setAvailableStaff(new ArrayList<>());
         return slot;
     }
 

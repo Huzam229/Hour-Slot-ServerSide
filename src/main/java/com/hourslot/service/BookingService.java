@@ -41,6 +41,9 @@ public class BookingService {
     private StaffRepository staffRepository;
 
     @Autowired
+    private StaffServiceRepository staffServiceRepository;
+
+    @Autowired
     private PricingService pricingService;
 
     @Autowired
@@ -118,6 +121,9 @@ public class BookingService {
     private Booking createBookingInternal(User customer, Branch branch, com.hourslot.model.Service service,
                                           Staff staff, LocalDateTime bookingTime, String clientNotes, String lockKey, Long customerPackageId) {
         LocalDateTime endTime = bookingTime.plusMinutes(service.getDurationMinutes());
+        if (staff == null) {
+            staff = assignAvailableStaff(branch, service, bookingTime, endTime, null);
+        }
         validateSlot(branch, staff, service, bookingTime, endTime, null);
 
         PricingService.PriceQuote quote = pricingService.quote(service, staff, bookingTime, endTime);
@@ -211,6 +217,45 @@ public class BookingService {
         log.info("Booking created id={} customerId={} status={} paymentStatus={}",
                 saved.getId(), customer.getId(), saved.getStatus(), saved.getPaymentStatus());
         return saved;
+    }
+
+    private Staff assignAvailableStaff(Branch branch, com.hourslot.model.Service service,
+                                       LocalDateTime bookingTime, LocalDateTime endTime, Long excludeBookingId) {
+        if (service.isGroupService()) {
+            return null;
+        }
+        List<Staff> eligible = new ArrayList<>();
+        for (StaffService mapping : staffServiceRepository.findByService(service)) {
+            Staff member = mapping.getStaff();
+            if (member != null && member.getBranch() != null && branch.getId().equals(member.getBranch().getId())) {
+                eligible.add(member);
+            }
+        }
+        if (eligible.isEmpty()) {
+            eligible.addAll(staffRepository.findByBranch(branch));
+        }
+        if (eligible.isEmpty()) {
+            return null;
+        }
+        Staff best = null;
+        BigDecimal bestPrice = null;
+        for (Staff candidate : eligible) {
+            if (!candidate.isActive()) continue;
+            try {
+                validateSlot(branch, candidate, service, bookingTime, endTime, excludeBookingId);
+            } catch (RuntimeException ex) {
+                continue;
+            }
+            BigDecimal price = pricingService.unitPrice(service, candidate);
+            if (best == null || price.compareTo(bestPrice) < 0) {
+                best = candidate;
+                bestPrice = price;
+            }
+        }
+        if (best == null) {
+            throw new RuntimeException("That time is already booked. Please choose another slot.");
+        }
+        return best;
     }
 
     private void validateSlot(Branch branch, Staff staff, com.hourslot.model.Service service,
@@ -345,6 +390,12 @@ public class BookingService {
 
         try {
             LocalDateTime endTime = newTime.plusMinutes(service.getDurationMinutes());
+            if (staff == null) {
+                staff = assignAvailableStaff(branch, service, newTime, endTime, bookingId);
+                if (staff != null && booking.primaryItem() != null) {
+                    booking.primaryItem().setStaff(staff);
+                }
+            }
             validateSlot(branch, staff, service, newTime, endTime, bookingId);
 
             BookingStatus previous = booking.getStatus();

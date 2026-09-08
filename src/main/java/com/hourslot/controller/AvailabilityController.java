@@ -78,7 +78,9 @@ public class AvailabilityController {
             }
             Optional<StaffService> mapping = staffServiceRepository.findByStaffAndService(staff, service);
             List<StaffService> anyMappings = staffServiceRepository.findByService(service).stream()
-                    .filter(m -> m.getStaff().getBranch().getId().equals(branchId))
+                    .filter(m -> m.getStaff() != null
+                            && m.getStaff().getBranch() != null
+                            && branchId.equals(m.getStaff().getBranch().getId()))
                     .collect(Collectors.toList());
             if (mapping.isPresent() || anyMappings.isEmpty()) {
                 targetStaff.add(staff);
@@ -86,8 +88,9 @@ public class AvailabilityController {
         } else {
             List<StaffService> mappings = staffServiceRepository.findByService(service);
             for (StaffService mapping : mappings) {
-                if (mapping.getStaff().getBranch().getId().equals(branchId)) {
-                    targetStaff.add(mapping.getStaff());
+                Staff member = mapping.getStaff();
+                if (member != null && member.getBranch() != null && branchId.equals(member.getBranch().getId())) {
+                    targetStaff.add(member);
                 }
             }
             if (targetStaff.isEmpty()) {
@@ -168,9 +171,41 @@ public class AvailabilityController {
     private void mergeSlots(Map<String, PricingService.PricedSlot> into, List<PricingService.PricedSlot> incoming) {
         for (PricingService.PricedSlot slot : incoming) {
             PricingService.PricedSlot existing = into.get(slot.getStartTime());
-            if (existing == null || slot.getPrice() < existing.getPrice()) {
+            if (existing == null) {
                 into.put(slot.getStartTime(), slot);
+                continue;
             }
+            if (slot.isAvailable()) {
+                boolean existingWasOpen = existing.isAvailable();
+                existing.setAvailable(true);
+                existing.setAvailability("AVAILABLE");
+                if (!existingWasOpen || slot.getPrice() < existing.getPrice()) {
+                    existing.setBasePrice(slot.getBasePrice());
+                    existing.setPrice(slot.getPrice());
+                    existing.setPriceMultiplier(slot.getPriceMultiplier());
+                    existing.setPricingKind(slot.getPricingKind());
+                    existing.setPricingLabel(slot.getPricingLabel());
+                    existing.setCurrency(slot.getCurrency());
+                    existing.setEndTime(slot.getEndTime());
+                }
+                mergeStaff(existing.getAvailableStaff(), slot.getAvailableStaff());
+            } else if (!existing.isAvailable()) {
+                mergeStaff(existing.getAvailableStaff(), slot.getAvailableStaff());
+            }
+        }
+    }
+
+    private void mergeStaff(List<PricingService.SlotStaff> into, List<PricingService.SlotStaff> extra) {
+        if (extra == null || extra.isEmpty()) return;
+        if (into == null) return;
+        Set<Long> seen = into.stream()
+                .map(PricingService.SlotStaff::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        for (PricingService.SlotStaff member : extra) {
+            if (member == null || member.getId() == null || seen.contains(member.getId())) continue;
+            seen.add(member.getId());
+            into.add(member);
         }
     }
 
@@ -222,24 +257,28 @@ public class AvailabilityController {
                     break;
                 }
             }
-            if (overlapsBooking) {
-                slotTime = slotTime.plusMinutes(step);
-                continue;
-            }
 
+            boolean locked = false;
             if (staff != null) {
                 LocalDateTime slotDateTime = localDate.atTime(slotStart);
                 String lockKey = slotLockService.buildLockKey(branchId, staff.getId(), service.getId(), slotDateTime);
-                if (slotLockService.isLocked(lockKey)) {
-                    slotTime = slotTime.plusMinutes(step);
-                    continue;
-                }
+                locked = slotLockService.isLocked(lockKey);
             }
 
             LocalDateTime startAt = localDate.atTime(slotStart);
             LocalDateTime endAt = localDate.atTime(slotEnd);
             PricingService.PriceQuote quote = pricingService.quote(service, unitPrice, dayRules, startAt, endAt);
-            slots.add(pricingService.toSlot(slotStart, slotEnd, quote));
+            PricingService.PricedSlot priced = pricingService.toSlot(slotStart, slotEnd, quote);
+            boolean open = !overlapsBooking && !locked;
+            priced.setAvailable(open);
+            priced.setAvailability(open ? "AVAILABLE" : "BOOKED");
+            if (staff != null && open) {
+                PricingService.SlotStaff offer = new PricingService.SlotStaff();
+                offer.setId(staff.getId());
+                offer.setName(staff.getName());
+                priced.getAvailableStaff().add(offer);
+            }
+            slots.add(priced);
             slotTime = slotTime.plusMinutes(step);
         }
 

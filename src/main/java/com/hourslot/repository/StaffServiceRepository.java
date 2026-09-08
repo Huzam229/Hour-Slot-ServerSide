@@ -2,6 +2,7 @@ package com.hourslot.repository;
 
 import com.hourslot.jdbc.JdbcSupport;
 import com.hourslot.jdbc.RowMappers;
+import com.hourslot.model.Branch;
 import com.hourslot.model.Business;
 import com.hourslot.model.Service;
 import com.hourslot.model.Staff;
@@ -30,7 +31,13 @@ public class StaffServiceRepository {
     private static final String STAFF_SELECT = """
             SELECT id, branch_id, user_id, display_name, designation, specialty, bio, rating_avg,
                    is_active, sort_order, created_at, updated_at, deleted_at
-            FROM staff WHERE id IN (:ids)
+            FROM staff WHERE id IN (:ids) AND deleted_at IS NULL
+            """;
+
+    private static final String BRANCH_SELECT = """
+            SELECT id, business_id, name, address, latitude, longitude, phone_number, timezone,
+                   is_active, sort_order, created_at, updated_at, deleted_at
+            FROM branches WHERE id IN (:ids) AND deleted_at IS NULL
             """;
 
     private static final String SERVICE_SELECT = """
@@ -106,7 +113,7 @@ public class StaffServiceRepository {
                 JOIN branches br ON br.id = s.branch_id
                 WHERE br.business_id = :bizId
                   AND s.deleted_at IS NULL
-                ORDER BY ss.id
+                ORDER BY ss.service_id, s.display_name, ss.id
                 """, jdbc.params().addValue("bizId", business.getId()), rows.staffService);
         attachDetails(list);
         return list;
@@ -127,6 +134,21 @@ public class StaffServiceRepository {
             }
         }
         Map<Long, Staff> staff = loadMap(STAFF_SELECT, staffIds, rows.staff, Staff::getId);
+        Set<Long> branchIds = new LinkedHashSet<>();
+        for (Staff member : staff.values()) {
+            if (member.getBranch() != null && member.getBranch().getId() != null) {
+                branchIds.add(member.getBranch().getId());
+            }
+        }
+        Map<Long, Branch> branches = loadMap(BRANCH_SELECT, branchIds, rows.branch, Branch::getId);
+        for (Staff member : staff.values()) {
+            if (member.getBranch() != null && member.getBranch().getId() != null) {
+                Branch branch = branches.get(member.getBranch().getId());
+                if (branch != null) {
+                    member.setBranch(branch);
+                }
+            }
+        }
         Map<Long, Service> services = loadMap(SERVICE_SELECT, serviceIds, rows.service, Service::getId);
         for (StaffService mapping : mappings) {
             if (mapping.getStaff() != null) {

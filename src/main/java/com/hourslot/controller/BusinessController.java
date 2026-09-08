@@ -567,9 +567,7 @@ public class BusinessController {
             business = staff.getBranch().getBusiness();
         }
 
-        List<Staff> allStaff = branchRepository.findByBusiness(business).stream()
-                .flatMap(b -> staffRepository.findByBranch(b).stream())
-                .toList();
+        List<Staff> allStaff = staffRepository.findByBusiness(business);
         return ResponseEntity.ok(allStaff);
     }
 
@@ -1467,6 +1465,11 @@ public class BusinessController {
             return ResponseEntity.status(403).body(new MessageResponse("Error: Unauthorized access."));
         }
 
+        if (staffServiceRepository.findByStaffAndService(staff, service).isPresent()) {
+            return ResponseEntity.status(409)
+                    .body(new MessageResponse("This specialist already offers that service."));
+        }
+
         StaffService ss = StaffService.builder()
                 .staff(staff)
                 .service(service)
@@ -1474,7 +1477,8 @@ public class BusinessController {
                 .build();
 
         staffServiceRepository.save(ss);
-        return ResponseEntity.ok(new MessageResponse("Service assigned to staff successfully!"));
+        StaffService saved = staffServiceRepository.findById(ss.getId()).orElse(ss);
+        return ResponseEntity.ok(saved);
     }
 
     @PutMapping("/staff-services/{id}")

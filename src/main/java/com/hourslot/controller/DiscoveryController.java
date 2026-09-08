@@ -9,6 +9,7 @@ import com.hourslot.model.BusinessStatus;
 import com.hourslot.model.Category;
 import com.hourslot.model.Review;
 import com.hourslot.model.Staff;
+import com.hourslot.model.StaffService;
 import com.hourslot.repository.BranchRepository;
 import com.hourslot.repository.BusinessRepository;
 import com.hourslot.repository.CategoryRepository;
@@ -16,6 +17,7 @@ import com.hourslot.repository.ReviewRepository;
 import com.hourslot.repository.ServicePackageRepository;
 import com.hourslot.repository.ServiceRepository;
 import com.hourslot.repository.StaffRepository;
+import com.hourslot.repository.StaffServiceRepository;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -61,6 +63,9 @@ public class DiscoveryController {
 
     @Autowired
     private ServicePackageRepository servicePackageRepository;
+
+    @Autowired
+    private StaffServiceRepository staffServiceRepository;
 
     @Data
     public static class PublicBusinessProfile {
@@ -112,10 +117,8 @@ public class DiscoveryController {
         List<Branch> branches = branchRepository.findByBusiness(business);
         List<com.hourslot.model.Service> services = serviceRepository.findByBusiness(business);
 
-        List<Staff> staff = new ArrayList<>();
-        for (Branch b : branches) {
-            staff.addAll(staffRepository.findByBranch(b));
-        }
+        List<Staff> staff = staffRepository.findByBusiness(business);
+        attachAllocatedServices(staff, business, services);
 
         List<Review> reviews = reviewRepository.findByBusinessOrderByCreatedAtDesc(business);
 
@@ -302,6 +305,43 @@ public class DiscoveryController {
         summary.setName(category.getName());
         summary.setSlug(category.getSlug());
         return summary;
+    }
+
+    private void attachAllocatedServices(
+            List<Staff> staff,
+            Business business,
+            List<com.hourslot.model.Service> catalog) {
+        if (staff == null || staff.isEmpty()) {
+            return;
+        }
+        Map<Long, List<com.hourslot.model.Service>> byStaff = new java.util.LinkedHashMap<>();
+        for (StaffService mapping : staffServiceRepository.findByStaffBranchBusiness(business)) {
+            if (mapping.getStaff() == null || mapping.getStaff().getId() == null || mapping.getService() == null) {
+                continue;
+            }
+            com.hourslot.model.Service allocated = new com.hourslot.model.Service();
+            allocated.setId(mapping.getService().getId());
+            allocated.setName(mapping.getService().getName());
+            byStaff.computeIfAbsent(mapping.getStaff().getId(), key -> new ArrayList<>()).add(allocated);
+        }
+        boolean hasMappings = !byStaff.isEmpty();
+        for (Staff member : staff) {
+            List<com.hourslot.model.Service> allocated = byStaff.get(member.getId());
+            if (allocated != null && !allocated.isEmpty()) {
+                member.setAllocatedServices(allocated);
+            } else if (!hasMappings) {
+                List<com.hourslot.model.Service> fallback = new ArrayList<>();
+                for (com.hourslot.model.Service service : catalog) {
+                    com.hourslot.model.Service copy = new com.hourslot.model.Service();
+                    copy.setId(service.getId());
+                    copy.setName(service.getName());
+                    fallback.add(copy);
+                }
+                member.setAllocatedServices(fallback);
+            } else {
+                member.setAllocatedServices(new ArrayList<>());
+            }
+        }
     }
 
     private static double haversineMeters(double lat1, double lon1, double lat2, double lon2) {

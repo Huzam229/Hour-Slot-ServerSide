@@ -3,6 +3,7 @@ package com.hourslot.repository;
 import com.hourslot.jdbc.JdbcSupport;
 import com.hourslot.jdbc.RowMappers;
 import com.hourslot.model.Branch;
+import com.hourslot.model.Business;
 import com.hourslot.model.Staff;
 import com.hourslot.model.User;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -69,8 +70,25 @@ public class StaffRepository {
     }
 
     public List<Staff> findByBranch(Branch branch) {
-        return jdbc.findList(SELECT + " WHERE branch_id = :branchId AND deleted_at IS NULL ORDER BY sort_order, id",
+        List<Staff> list = jdbc.findList(SELECT + " WHERE branch_id = :branchId AND deleted_at IS NULL ORDER BY sort_order, id",
                 jdbc.params().addValue("branchId", branch.getId()), rows.staff);
+        list.forEach(this::hydrateBranchBusiness);
+        return list;
+    }
+
+    public List<Staff> findByBusiness(Business business) {
+        List<Staff> list = jdbc.findList("""
+                SELECT s.id, s.branch_id, s.user_id, s.display_name, s.designation, s.specialty, s.bio,
+                       s.rating_avg, s.is_active, s.sort_order, s.created_at, s.updated_at, s.deleted_at
+                FROM staff s
+                JOIN branches br ON br.id = s.branch_id
+                WHERE br.business_id = :businessId
+                  AND s.deleted_at IS NULL
+                  AND br.deleted_at IS NULL
+                ORDER BY br.sort_order, s.sort_order, s.id
+                """, jdbc.params().addValue("businessId", business.getId()), rows.staff);
+        list.forEach(this::hydrateBranchBusiness);
+        return list;
     }
 
     public Optional<Staff> findByUser(User user) {
