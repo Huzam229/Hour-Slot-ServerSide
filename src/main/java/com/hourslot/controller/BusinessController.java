@@ -260,7 +260,7 @@ public class BusinessController {
         }
 
         return ResponseEntity.ok(new MessageResponse(
-                "Business registration submitted. Complete verification documents so Super Admin can grant a verified badge."));
+                "Business registration submitted. Upload Tier 1 documents so Super Admin can approve your listing."));
     }
 
     @GetMapping("/profile")
@@ -344,7 +344,7 @@ public class BusinessController {
                 "branches");
 
         // Allow setup while PENDING so owners can complete onboarding before admin approval.
-        // Bookings remain blocked until APPROVED + verified.
+        // Bookings remain blocked until listing is APPROVED (Tier 1 docs). Verified badge is optional.
 
         if (request.getLatitude() == null || request.getLongitude() == null) {
             return ResponseEntity.badRequest()

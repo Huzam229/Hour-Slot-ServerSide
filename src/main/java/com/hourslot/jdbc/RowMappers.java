@@ -16,8 +16,9 @@ import com.hourslot.model.BusinessMedia;
 import com.hourslot.model.BusinessStatus;
 import com.hourslot.model.BusinessVerificationDocument;
 import com.hourslot.model.Category;
-import com.hourslot.model.CustomerPackage;
 import com.hourslot.model.CustomerProfile;
+import com.hourslot.model.CustomerPackage;
+import com.hourslot.model.EmailVerificationToken;
 import com.hourslot.model.Favorite;
 import com.hourslot.model.MediaAsset;
 import com.hourslot.model.MemberRole;
@@ -457,6 +458,17 @@ public class RowMappers {
 
     public final RowMapper<PasswordResetToken> passwordResetToken = (rs, i) -> {
         PasswordResetToken token = new PasswordResetToken();
+        token.setId(JdbcSupport.getLong(rs, "id"));
+        token.setTokenHash(rs.getString("token_hash"));
+        token.setUser(refUser(JdbcSupport.getLong(rs, "user_id")));
+        token.setExpiresAt(JdbcSupport.localDateTime(rs, "expires_at"));
+        token.setUsed(rs.getBoolean("used"));
+        token.setCreatedAt(JdbcSupport.localDateTime(rs, "created_at"));
+        return token;
+    };
+
+    public final RowMapper<EmailVerificationToken> emailVerificationToken = (rs, i) -> {
+        EmailVerificationToken token = new EmailVerificationToken();
         token.setId(JdbcSupport.getLong(rs, "id"));
         token.setTokenHash(rs.getString("token_hash"));
         token.setUser(refUser(JdbcSupport.getLong(rs, "user_id")));

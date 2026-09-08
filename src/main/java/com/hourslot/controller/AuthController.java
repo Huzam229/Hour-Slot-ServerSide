@@ -6,9 +6,11 @@ import com.hourslot.repository.AuthRefreshTokenRepository;
 import com.hourslot.repository.BusinessRepository;
 import com.hourslot.repository.CategoryRepository;
 import com.hourslot.repository.CustomerProfileRepository;
+import com.hourslot.repository.EmailVerificationTokenRepository;
 import com.hourslot.repository.PasswordResetTokenRepository;
 import com.hourslot.repository.UserRepository;
 import com.hourslot.service.MailService;
+import com.hourslot.service.NotificationPreferenceService;
 import com.hourslot.service.RbacService;
 import com.hourslot.service.StaffInviteService;
 import com.hourslot.service.TenancyService;
@@ -61,6 +63,12 @@ public class AuthController {
 
     @Autowired
     private CategoryRepository categoryRepository;
+
+    @Autowired
+    private EmailVerificationTokenRepository emailVerificationTokenRepository;
+
+    @Autowired
+    private NotificationPreferenceService notificationPreferenceService;
 
     @Autowired
     private PasswordResetTokenRepository passwordResetTokenRepository;
@@ -215,7 +223,40 @@ public class AuthController {
             businessRepository.save(business);
         }
 
+        notificationPreferenceService.ensureDefaults(savedUser);
+        issueEmailVerification(savedUser);
+
         return ResponseEntity.ok(new MessageResponse("User registered successfully!"));
+    }
+
+    @GetMapping("/verify-email")
+    @Transactional
+    public ResponseEntity<?> verifyEmail(@RequestParam String token) {
+        EmailVerificationToken verificationToken = emailVerificationTokenRepository.findByTokenHash(TokenHashes.sha256(token))
+                .orElse(null);
+        if (verificationToken == null || verificationToken.isUsed() || verificationToken.isExpired()) {
+            return ResponseEntity.badRequest()
+                    .body(new MessageResponse("Verification link is invalid or expired."));
+        }
+        User user = verificationToken.getUser();
+        user.setEmailVerifiedAt(LocalDateTime.now());
+        userRepository.save(user);
+        verificationToken.setUsed(true);
+        emailVerificationTokenRepository.save(verificationToken);
+        return ResponseEntity.ok(new MessageResponse("Email verified successfully."));
+    }
+
+    private void issueEmailVerification(User user) {
+        emailVerificationTokenRepository.deleteByUser(user);
+        String token = UUID.randomUUID().toString();
+        emailVerificationTokenRepository.save(EmailVerificationToken.builder()
+                .tokenHash(TokenHashes.sha256(token))
+                .user(user)
+                .expiresAt(LocalDateTime.now().plusDays(2))
+                .used(false)
+                .build());
+        mailService.sendEmailVerificationEmail(user.getEmail(), user.getFirstName(), token);
+        log.info("Email verification sent for {}", user.getEmail());
     }
 
     @GetMapping("/staff-invite")
@@ -276,8 +317,7 @@ public class AuthController {
     @PostMapping("/forgot-password")
     @Transactional
     public ResponseEntity<?> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
-        // Always return success to avoid email enumeration
-        final String[] generated = { null };
+        // Always return the same message to avoid email enumeration. Never log or return the raw token.
         userRepository.findByEmail(request.getEmail()).ifPresent(user -> {
             passwordResetTokenRepository.deleteByUser(user);
             String token = UUID.randomUUID().toString();
@@ -288,19 +328,10 @@ public class AuthController {
                     .used(false)
                     .build();
             passwordResetTokenRepository.save(resetToken);
-            generated[0] = token;
-            log.info("Password reset token for {}: {}", user.getEmail(), token);
-            log.info("Reset URL: /auth/reset-password?token={}", token);
             mailService.sendPasswordResetEmail(user.getEmail(), token);
+            log.info("Password reset email sent for {}", user.getEmail());
         });
 
-        String profiles = System.getenv().getOrDefault("SPRING_PROFILES_ACTIVE", "dev");
-        if (!profiles.contains("prod") && generated[0] != null) {
-            java.util.Map<String, Object> body = new java.util.HashMap<>();
-            body.put("message", "If an account exists for that email, a password reset link has been generated.");
-            body.put("token", generated[0]);
-            return ResponseEntity.ok(body);
-        }
         return ResponseEntity.ok(new MessageResponse(
                 "If an account exists for that email, a password reset link has been generated."));
     }

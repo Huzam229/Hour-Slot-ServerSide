@@ -328,6 +328,24 @@ public class BookingController {
             }
             booking.setStatus(BookingStatus.CANCELLED);
             bookingRepository.save(booking);
+
+            User customerUser = userRepository.findById(userDetails.getId()).orElse(null);
+            String serviceName = booking.getService() != null ? booking.getService().getName() : "your appointment";
+            String branchName = booking.getBranch() != null ? booking.getBranch().getName() : "the venue";
+            notificationService.notify(
+                    customerUser,
+                    "Booking cancelled",
+                    "Your booking for " + serviceName + " has been cancelled."
+            );
+            if (customerUser != null) {
+                mailService.sendBookingCancelledEmail(
+                        customerUser.getEmail(),
+                        customerUser.getFirstName(),
+                        serviceName,
+                        String.valueOf(booking.getBookingTime()),
+                        branchName
+                );
+            }
         }
 
         return ResponseEntity.ok(new MessageResponse("Booking cancelled successfully."));

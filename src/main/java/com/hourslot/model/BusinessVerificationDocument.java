@@ -14,6 +14,8 @@ public class BusinessVerificationDocument {
     public static final String TRADE_LICENSE = "TRADE_LICENSE";
     public static final String BANK_STATEMENT = "BANK_STATEMENT";
     public static final String OWNER_GOVERNMENT_ID = "OWNER_GOVERNMENT_ID";
+    public static final String BUSINESS_ADDRESS_PROOF = "BUSINESS_ADDRESS_PROOF";
+    public static final String TAX_ID = "TAX_ID";
 
     public static final String STATUS_SUBMITTED = "SUBMITTED";
     public static final String STATUS_APPROVED = "APPROVED";

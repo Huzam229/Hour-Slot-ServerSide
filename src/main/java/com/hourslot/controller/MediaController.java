@@ -3,10 +3,10 @@ package com.hourslot.controller;
 import com.hourslot.dto.MessageResponse;
 import com.hourslot.model.Business;
 import com.hourslot.model.User;
-import com.hourslot.repository.BusinessRepository;
 import com.hourslot.repository.UserRepository;
 import com.hourslot.security.CustomUserDetails;
 import com.hourslot.service.MediaAssetService;
+import com.hourslot.service.ObjectStorageService;
 import com.hourslot.service.TenancyService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,6 +35,9 @@ public class MediaController {
     @Autowired
     private MediaAssetService mediaAssetService;
 
+    @Autowired
+    private ObjectStorageService objectStorageService;
+
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
 
@@ -56,17 +59,29 @@ public class MediaController {
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
-        Path dir = Paths.get(uploadDir).toAbsolutePath().normalize();
-        Files.createDirectories(dir);
-
         String ext = contentType.contains("png") ? ".png"
                 : contentType.contains("webp") ? ".webp"
                 : contentType.contains("gif") ? ".gif" : ".jpg";
-        String filename = "biz-" + business.getId() + "-" + UUID.randomUUID() + ext;
-        Path target = dir.resolve(filename);
-        Files.write(target, file.getBytes());
+        String publicUrl;
 
-        String publicUrl = "/uploads/" + filename;
+        if (objectStorageService.isConfigured()) {
+            ObjectStorageService.StoredObject stored = objectStorageService.upload(
+                    objectStorageService.businessProfileFolder(),
+                    "biz-" + business.getId(),
+                    contentType,
+                    file.getBytes(),
+                    ext);
+            publicUrl = stored.publicUrl();
+        } else {
+            Path dir = Paths.get(uploadDir).toAbsolutePath().normalize()
+                    .resolve("bussiness_profile");
+            Files.createDirectories(dir);
+            String filename = "biz-" + business.getId() + "-" + UUID.randomUUID() + ext;
+            Path target = dir.resolve(filename);
+            Files.write(target, file.getBytes());
+            publicUrl = "/uploads/bussiness_profile/" + filename;
+        }
+
         String galleryUrls = mediaAssetService.appendGalleryUrl(business.getId(), publicUrl);
 
         return ResponseEntity.ok(java.util.Map.of(
@@ -83,6 +98,9 @@ public class MediaController {
         User user = userRepository.findById(userDetails.getId()).orElseThrow();
         Business business = tenancyService.findBusinessForUser(user)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
+        if (objectStorageService.isConfigured() && url != null && url.startsWith("http")) {
+            objectStorageService.deleteByPublicUrl(url);
+        }
         mediaAssetService.removeGalleryUrl(business.getId(), url);
         return ResponseEntity.ok(new MessageResponse("Image removed from gallery."));
     }

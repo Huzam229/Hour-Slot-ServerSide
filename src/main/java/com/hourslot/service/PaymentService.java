@@ -2,19 +2,24 @@ package com.hourslot.service;
 
 import com.hourslot.model.Booking;
 import com.hourslot.model.BookingStatus;
+import com.hourslot.model.Business;
 import com.hourslot.model.CustomerPackage;
 import com.hourslot.model.Payment;
+import com.hourslot.model.PaymentRefund;
 import com.hourslot.model.ServicePackage;
 import com.hourslot.model.User;
 import com.hourslot.repository.BookingRepository;
 import com.hourslot.repository.CustomerPackageRepository;
+import com.hourslot.repository.PaymentRefundRepository;
 import com.hourslot.repository.PaymentRepository;
 import com.hourslot.repository.ServicePackageRepository;
 import com.hourslot.repository.UserRepository;
 import com.hourslot.util.MoneyAmounts;
 import com.stripe.Stripe;
 import com.stripe.exception.StripeException;
+import com.stripe.model.Charge;
 import com.stripe.model.Event;
+import com.stripe.model.Refund;
 import com.stripe.model.EventDataObjectDeserializer;
 import com.stripe.model.StripeObject;
 import com.stripe.model.checkout.Session;
@@ -45,6 +50,7 @@ public class PaymentService {
     private final CustomerPackageRepository customerPackageRepository;
     private final ServicePackageRepository servicePackageRepository;
     private final PaymentRepository paymentRepository;
+    private final PaymentRefundRepository paymentRefundRepository;
     private final UserRepository userRepository;
     private final MailService mailService;
     private final NotificationService notificationService;
@@ -63,6 +69,7 @@ public class PaymentService {
             CustomerPackageRepository customerPackageRepository,
             ServicePackageRepository servicePackageRepository,
             PaymentRepository paymentRepository,
+            PaymentRefundRepository paymentRefundRepository,
             UserRepository userRepository,
             MailService mailService,
             NotificationService notificationService) {
@@ -70,6 +77,7 @@ public class PaymentService {
         this.customerPackageRepository = customerPackageRepository;
         this.servicePackageRepository = servicePackageRepository;
         this.paymentRepository = paymentRepository;
+        this.paymentRefundRepository = paymentRefundRepository;
         this.userRepository = userRepository;
         this.mailService = mailService;
         this.notificationService = notificationService;
@@ -190,8 +198,14 @@ public class PaymentService {
         Event event = Webhook.constructEvent(payload, signatureHeader, stripeWebhookSecret);
         log.info("Stripe webhook received: type={}, id={}", event.getType(), event.getId());
 
-        if (!"checkout.session.completed".equals(event.getType())) {
+        if (!"checkout.session.completed".equals(event.getType())
+                && !"charge.refunded".equals(event.getType())) {
             log.debug("Ignoring webhook event type={}", event.getType());
+            return;
+        }
+
+        if ("charge.refunded".equals(event.getType())) {
+            handleChargeRefunded(event);
             return;
         }
 
@@ -236,11 +250,12 @@ public class PaymentService {
         String type = metadata.get("type");
         try {
             if ("BOOKING".equals(type)) {
-                markBookingPaid(Long.parseLong(metadata.get("bookingId")));
+                markBookingPaid(Long.parseLong(metadata.get("bookingId")), session);
             } else if ("PACKAGE".equals(type)) {
                 activatePurchasedPackage(
                         Long.parseLong(metadata.get("packageId")),
-                        Long.parseLong(metadata.get("customerId"))
+                        Long.parseLong(metadata.get("customerId")),
+                        session
                 );
             } else {
                 log.warn("Unknown checkout metadata type={} for session={}", type, session.getId());
@@ -253,7 +268,7 @@ public class PaymentService {
         }
     }
 
-    private void markBookingPaid(Long bookingId) {
+    private void markBookingPaid(Long bookingId, Session session) {
         Booking booking = bookingRepository.findByIdWithDetails(bookingId)
                 .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
 
@@ -261,6 +276,17 @@ public class PaymentService {
         booking.setStatus(BookingStatus.CONFIRMED);
         booking.setPaymentMethod("ONLINE");
         bookingRepository.save(booking);
+
+        String providerPaymentId = session != null && session.getPaymentIntent() != null
+                ? session.getPaymentIntent()
+                : (session != null ? session.getId() : null);
+        Map<String, Object> rawPayload = new HashMap<>();
+        if (session != null) {
+            rawPayload.put("stripeSessionId", session.getId());
+            if (session.getPaymentIntent() != null) {
+                rawPayload.put("stripePaymentIntent", session.getPaymentIntent());
+            }
+        }
 
         Business paidBusiness = booking.resolvedBusiness();
         paymentRepository.save(Payment.builder()
@@ -272,9 +298,11 @@ public class PaymentService {
                 .referenceType("BOOKING")
                 .referenceId(booking.getId())
                 .provider("STRIPE")
+                .providerPaymentId(providerPaymentId)
                 .amount(java.math.BigDecimal.valueOf(booking.getPrice()))
                 .currency(booking.getCurrency() == null ? "USD" : booking.getCurrency())
                 .status("SUCCEEDED")
+                .rawPayload(rawPayload.isEmpty() ? null : rawPayload)
                 .build());
         log.info("Booking {} marked PAID via Stripe webhook", bookingId);
 
@@ -298,7 +326,7 @@ public class PaymentService {
         });
     }
 
-    private void activatePurchasedPackage(Long packageId, Long customerId) {
+    private void activatePurchasedPackage(Long packageId, Long customerId, Session session) {
         User customer = userRepository.findById(customerId)
                 .orElseThrow(() -> new IllegalArgumentException("Customer not found: " + customerId));
         ServicePackage servicePackage = servicePackageRepository.findById(packageId)
@@ -319,6 +347,17 @@ public class PaymentService {
                 .build();
         customerPackage = customerPackageRepository.save(customerPackage);
 
+        String providerPaymentId = session != null && session.getPaymentIntent() != null
+                ? session.getPaymentIntent()
+                : (session != null ? session.getId() : null);
+        Map<String, Object> rawPayload = new HashMap<>();
+        if (session != null) {
+            rawPayload.put("stripeSessionId", session.getId());
+            if (session.getPaymentIntent() != null) {
+                rawPayload.put("stripePaymentIntent", session.getPaymentIntent());
+            }
+        }
+
         paymentRepository.save(Payment.builder()
                 .business(servicePackage.getBusiness())
                 .organization(servicePackage.getBusiness().getOrganization())
@@ -327,9 +366,11 @@ public class PaymentService {
                 .referenceType("CUSTOMER_PACKAGE")
                 .referenceId(customerPackage.getId())
                 .provider("STRIPE")
+                .providerPaymentId(providerPaymentId)
                 .amount(java.math.BigDecimal.valueOf(servicePackage.getPrice()))
                 .currency(servicePackage.getCurrency() == null ? "USD" : servicePackage.getCurrency())
                 .status("SUCCEEDED")
+                .rawPayload(rawPayload.isEmpty() ? null : rawPayload)
                 .build());
         log.info("Activated package {} for customer {} via Stripe webhook", packageId, customerId);
 
@@ -344,6 +385,60 @@ public class PaymentService {
                     servicePackage.getSessionsCount()
             );
         });
+    }
+
+    @Transactional
+    void handleChargeRefunded(Event event) {
+        Optional<Charge> chargeOpt = extractCharge(event);
+        if (chargeOpt.isEmpty()) {
+            log.warn("Could not deserialize Charge from refund webhook event id={}", event.getId());
+            return;
+        }
+        Charge charge = chargeOpt.get();
+        String paymentIntentId = charge.getPaymentIntent();
+        if (paymentIntentId == null || paymentIntentId.isBlank()) {
+            return;
+        }
+
+        paymentRepository.findByProviderPaymentId(paymentIntentId).ifPresentOrElse(payment -> {
+            Refund latestRefund = charge.getRefunds() != null && !charge.getRefunds().getData().isEmpty()
+                    ? charge.getRefunds().getData().get(0)
+                    : null;
+            String providerRefundId = latestRefund != null ? latestRefund.getId() : event.getId();
+            if (paymentRefundRepository.findByProviderRefundId(providerRefundId).isPresent()) {
+                return;
+            }
+            java.math.BigDecimal refundAmount = latestRefund != null && latestRefund.getAmount() != null
+                    ? java.math.BigDecimal.valueOf(latestRefund.getAmount()).movePointLeft(2)
+                    : payment.getAmount();
+            paymentRefundRepository.save(PaymentRefund.builder()
+                    .payment(payment)
+                    .amount(refundAmount)
+                    .reason("Stripe refund")
+                    .providerRefundId(providerRefundId)
+                    .status("SUCCEEDED")
+                    .build());
+            payment.setStatus("REFUNDED");
+            paymentRepository.save(payment);
+            log.info("Recorded refund for payment id={}", payment.getId());
+        }, () -> log.warn("No payment found for Stripe paymentIntent={}", paymentIntentId));
+    }
+
+    private Optional<Charge> extractCharge(Event event) {
+        EventDataObjectDeserializer deserializer = event.getDataObjectDeserializer();
+        Optional<StripeObject> object = deserializer.getObject();
+        if (object.isPresent() && object.get() instanceof Charge charge) {
+            return Optional.of(charge);
+        }
+        try {
+            StripeObject raw = deserializer.deserializeUnsafe();
+            if (raw instanceof Charge charge) {
+                return Optional.of(charge);
+            }
+        } catch (Exception e) {
+            log.error("Unsafe Stripe Charge deserialization failed for event id={}: {}", event.getId(), e.getMessage());
+        }
+        return Optional.empty();
     }
 
     private static Map<String, String> checkoutResponse(String url) {

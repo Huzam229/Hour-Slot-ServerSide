@@ -27,8 +27,8 @@ spring:
 
   servlet:
     multipart:
-      max-file-size: 5MB
-      max-request-size: 10MB
+      max-file-size: 15MB
+      max-request-size: 20MB
 
   data:
     redis:
@@ -37,8 +37,20 @@ spring:
       password: ${REDIS_PASSWORD:}
       timeout: 60000
 
-  # Set MAIL_HOST / MAIL_PORT / MAIL_USERNAME / MAIL_PASSWORD to enable SMTP.
-  # Spring Boot auto-configures JavaMailSender when spring.mail.host is present.
+  # Fill username/password below to enable outbound email.
+  # Restart the backend after changes. Prefer an app password (Gmail), not your login password.
+  # Do not commit real credentials to git — use env overrides in shared/prod if needed.
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:haseebsardar123123@gmail.com}
+    password: ${MAIL_PASSWORD:lkic dyrm ftkl rshd}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
 
 app:
   frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
@@ -52,11 +64,19 @@ app:
   upload:
     dir: ${UPLOAD_DIR:uploads}
   r2:
-    endpoint: ${R2_ENDPOINT:}
-    access-key: ${R2_ACCESS_KEY:}
-    secret-key: ${R2_SECRET_KEY:}
-    bucket-name: ${R2_BUCKET_NAME:hourslot-media}
-    public-url: ${R2_PUBLIC_URL:}
+    endpoint: ${R2_ENDPOINT:https://bfdeed5456d05480caaa412d2577bc3d.r2.cloudflarestorage.com}
+    region: ${STORAGE_REGION:auto}
+    access-key: ${R2_ACCESS_KEY:71bafb759c79a40d0a4e32f1f47ba35b}
+    secret-key: ${R2_SECRET_KEY:583347057a28b54a85b337eb521eddb8ad623d4e31c910d7c7921450ca6f9f4e}
+    bucket-name: ${R2_BUCKET_NAME:hour-slot}
+    public-url: ${R2_PUBLIC_URL:https://pub-c3cf41ff651b40069ed1245ae1b0fad7.r2.dev}
+    path-style-access: true
+    # R2 often requires chunked encoding disabled for PutObject
+    chunked-encoding: false
+    folders:
+      # Must match folder names already created in the hour-slot bucket
+      verification: verification
+      business-profile: bussiness_profile
   stripe:
     secret-key: ${STRIPE_SECRET_KEY:}
     webhook-secret: ${STRIPE_WEBHOOK_SECRET:}

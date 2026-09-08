@@ -101,7 +101,7 @@ public class DiscoveryController {
         Business business = businessRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Business not found."));
 
-        if (business.getStatus() != BusinessStatus.APPROVED || !business.isVerified()) {
+        if (business.getStatus() != BusinessStatus.APPROVED) {
             throw new RuntimeException("Business is not available for booking.");
         }
 
@@ -252,8 +252,7 @@ public class DiscoveryController {
     private boolean isBookable(Branch branch) {
         Business business = branch.getBusiness();
         return business != null
-                && business.getStatus() == BusinessStatus.APPROVED
-                && business.isVerified();
+                && business.getStatus() == BusinessStatus.APPROVED;
     }
 
     private DiscoverBranchResponse toResponse(Branch branch, Double userLat, Double userLon) {

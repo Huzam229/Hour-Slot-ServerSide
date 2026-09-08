@@ -1,6 +1,7 @@
 package com.hourslot.config;
 
 import com.hourslot.security.AuthEntryPointJwt;
+import com.hourslot.security.AuthRateLimitFilter;
 import com.hourslot.security.AuthTokenFilter;
 import com.hourslot.security.CustomUserDetailsService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,6 +37,9 @@ public class SecurityConfig {
 
     @Autowired
     private AuthEntryPointJwt unauthorizedHandler;
+
+    @Autowired
+    private AuthRateLimitFilter authRateLimitFilter;
 
     @Value("${app.cors.allowed-origins:http://localhost:3000}")
     private String allowedOrigins;
@@ -85,6 +89,7 @@ public class SecurityConfig {
             );
 
         http.authenticationProvider(authenticationProvider());
+        http.addFilterBefore(authRateLimitFilter, UsernamePasswordAuthenticationFilter.class);
         http.addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
