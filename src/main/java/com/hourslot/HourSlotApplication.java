@@ -1,6 +1,7 @@
 package com.hourslot;
 
 import com.hourslot.config.DatabaseUrlParser;
+import com.hourslot.config.EnvFileLoader;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration;
@@ -16,6 +17,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 public class HourSlotApplication {
 
     public static void main(String[] args) {
+        EnvFileLoader.load();
         DatabaseUrlParser.applyFromEnvironment();
         SpringApplication.run(HourSlotApplication.class, args);
     }

@@ -17,7 +17,7 @@ public final class DatabaseUrlParser {
     }
 
     public static void applyFromEnvironment() {
-        String databaseUrl = System.getenv("DATABASE_URL");
+        String databaseUrl = firstValue(System.getenv("DATABASE_URL"), System.getProperty("DATABASE_URL"));
         if (databaseUrl == null || databaseUrl.isBlank()) {
             return;
         }
@@ -51,5 +51,12 @@ public final class DatabaseUrlParser {
         } catch (Exception e) {
             log.error("Failed to parse DATABASE_URL: {}", e.getMessage());
         }
+    }
+
+    private static String firstValue(String env, String property) {
+        if (env != null && !env.isBlank()) {
+            return env;
+        }
+        return property;
     }
 }
